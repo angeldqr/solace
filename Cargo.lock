@@ -3910,7 +3910,7 @@ dependencies = [
 
 [[package]]
 name = "solace-app"
-version = "0.0.2"
+version = "0.0.3"
 dependencies = [
  "serde",
  "serde_json",
@@ -3926,7 +3926,7 @@ dependencies = [
 
 [[package]]
 name = "solace-cli"
-version = "0.0.2"
+version = "0.0.3"
 dependencies = [
  "clap",
  "interprocess",
@@ -3936,7 +3936,7 @@ dependencies = [
 
 [[package]]
 name = "solace-core"
-version = "0.0.2"
+version = "0.0.3"
 dependencies = [
  "regex",
  "serde",
@@ -3946,7 +3946,7 @@ dependencies = [
 
 [[package]]
 name = "solace-infra"
-version = "0.0.2"
+version = "0.0.3"
 dependencies = [
  "interprocess",
  "portable-pty",
