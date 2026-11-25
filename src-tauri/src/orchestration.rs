@@ -73,6 +73,28 @@ pub fn handle(app: &AppHandle, request: Request) -> Response {
             settle(app, pane, Duration::from_secs(timeout_secs).min(MAX_WAIT))
         }
         Request::AgentList => Ok(json!(with_state(app, |s| crate::agents::views(s)))),
+        Request::AgentReport {
+            pane,
+            session,
+            state,
+        } => {
+            with_state(app, |s| {
+                if s.reports.get(&pane).is_some_and(|r| r.session != session) {
+                    return; // another Claude inside this pane's agent, e.g. `claude -p` from a tool
+                }
+                match state {
+                    Some(state) => {
+                        let at = Instant::now();
+                        s.reports
+                            .insert(pane, crate::agents::Report { state, session, at });
+                    }
+                    None => {
+                        s.reports.remove(&pane);
+                    }
+                }
+            });
+            Ok(json!({ "pane": pane }))
+        }
     }
 }
 

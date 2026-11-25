@@ -1,3 +1,5 @@
+pub mod hooks;
+
 use std::borrow::Cow;
 use std::sync::OnceLock;
 use std::time::{Duration, Instant};

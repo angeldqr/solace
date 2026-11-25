@@ -79,5 +79,7 @@ export const api = {
   notificationsSet: (enabled: boolean) => invoke("notifications_set", { enabled }),
   localeSet: (locale: string) => invoke("locale_set", { locale }),
   systemToastsEnabled: () => invoke<boolean>("system_toasts_enabled"),
+  claudeIntegrationInstalled: () => invoke<boolean>("claude_integration_installed"),
+  claudeIntegrationSet: (enabled: boolean) => invoke("claude_integration_set", { enabled }),
   shellSet: (path: string | null) => invoke("shell_set", { path }),
 };

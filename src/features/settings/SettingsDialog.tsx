@@ -67,6 +67,7 @@ function Dialog() {
         <div className="flex flex-col gap-7 overflow-y-auto px-5 py-5">
           <Appearance />
           <TerminalSection />
+          <AgentsSection />
           <ShellSection />
           <NotificationsSection />
           <LanguageSection />
@@ -309,6 +310,41 @@ function ShellSection() {
           ))}
         </select>
       </Field>
+      {error && <p className="text-red-500">{error}</p>}
+    </Section>
+  );
+}
+
+function AgentsSection() {
+  const [installed, setInstalled] = useState<boolean | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    api.claudeIntegrationInstalled().then(setInstalled, (e) => setError(String(e)));
+  }, []);
+  const toggle = (enabled: boolean) => {
+    setError(null);
+    setBusy(true);
+    api
+      .claudeIntegrationSet(enabled)
+      .then(
+        () => setInstalled(enabled),
+        (e) => setError(String(e)),
+      )
+      .finally(() => setBusy(false));
+  };
+  return (
+    <Section title="agents">
+      <Field label={t("claudeIntegration")}>
+        <input
+          type="checkbox"
+          checked={installed ?? false}
+          disabled={installed === null || busy}
+          onChange={(event) => toggle(event.target.checked)}
+          className="size-4 accent-[var(--color-primary)]"
+        />
+      </Field>
+      <p className="text-2xs text-fg-subtle">{t("claudeIntegrationHint")}</p>
       {error && <p className="text-red-500">{error}</p>}
     </Section>
   );

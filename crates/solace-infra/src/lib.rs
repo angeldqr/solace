@@ -2,6 +2,7 @@
 
 pub mod files;
 pub mod git;
+pub mod integrations;
 pub mod ipc;
 pub mod persist;
 pub mod processes;

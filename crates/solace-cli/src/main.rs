@@ -1,9 +1,10 @@
-use std::io::{BufRead, BufReader, Write};
+use std::io::{BufRead, BufReader, Read, Write};
 use std::path::PathBuf;
 use std::process::ExitCode;
 
 use clap::{Parser, Subcommand};
 use interprocess::local_socket::{GenericNamespaced, Stream, ToNsName, prelude::*};
+use solace_core::agents::hooks::{HookVerdict, claude_hook};
 use solace_core::orchestration::{Request, Response};
 use solace_core::terminals::{Direction, PaneId};
 
@@ -27,6 +28,13 @@ enum Command {
     Agent(AgentCommand),
     /// Print the agent skill, or install it for Claude Code with `solace skill install`.
     Skill { action: Option<String> },
+    /// Called by Claude Code's hooks with the event on stdin; reports the agent's exact state.
+    #[command(hide = true)]
+    Hook {
+        /// Marks the hook as Solace's in Claude Code's settings.
+        #[arg(long)]
+        source: Option<String>,
+    },
 }
 
 #[derive(Subcommand)]
@@ -156,7 +164,7 @@ fn request(command: Command) -> Result<Request, String> {
             timeout_secs: timeout,
         },
         Command::Agent(AgentCommand::List) => Request::AgentList,
-        Command::Skill { .. } => return Err("not a request".into()),
+        Command::Skill { .. } | Command::Hook { .. } => return Err("not a request".into()),
     })
 }
 
@@ -193,7 +201,44 @@ fn install_skill() -> Result<serde_json::Value, String> {
     Ok(serde_json::json!({ "installed": path }))
 }
 
+/// Hooks must never get in Claude Code's way: outside Solace, or on any error, this does nothing
+/// and exits 0 with no output (a hook's output can reach the model).
+fn hook() -> ExitCode {
+    let mut input = String::new();
+    let _ = std::io::stdin()
+        .take(1024 * 1024)
+        .read_to_string(&mut input);
+    // Claude Code writes the whole event; leaving the rest unread would break its pipe.
+    let _ = std::io::copy(&mut std::io::stdin(), &mut std::io::sink());
+    let (Some(pane), Ok(event)) = (
+        caller_pane(),
+        serde_json::from_str::<serde_json::Value>(&input),
+    ) else {
+        return ExitCode::SUCCESS;
+    };
+    let state = match claude_hook(&event) {
+        HookVerdict::Report(state) => Some(state),
+        HookVerdict::Clear => None,
+        HookVerdict::Ignore => return ExitCode::SUCCESS,
+    };
+    let session = event
+        .get("session_id")
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or_default()
+        .to_string();
+    let _ = call(&Request::AgentReport {
+        pane,
+        session,
+        state,
+    });
+    ExitCode::SUCCESS
+}
+
 fn main() -> ExitCode {
+    // Before clap: a usage error exits 2, which Claude Code reads as "block this".
+    if std::env::args().nth(1).as_deref() == Some("hook") {
+        return hook();
+    }
     let command = Cli::parse().command;
     let result = match command {
         Command::Skill { action: None } => {

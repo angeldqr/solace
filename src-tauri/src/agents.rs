@@ -18,6 +18,25 @@ const SCAN_EVERY: u32 = 4;
 /// Without a matching screen rule, output streaming this long means the agent is working;
 /// shorter bursts are redraws (a resize, a focus change), not work.
 const WORKING_AFTER: Duration = Duration::from_secs(1);
+/// A state announced by the agent's own hooks, which outranks reading the screen for a while.
+pub struct Report {
+    pub state: AgentState,
+    /// The Claude session that owns the pane until its SessionEnd or the agent quits.
+    pub session: String,
+    pub at: Instant,
+}
+
+impl Report {
+    /// Working is short-lived: an interrupted turn fires no hook, and the screen must take over.
+    fn current(&self) -> Option<AgentState> {
+        let ttl = match self.state {
+            AgentState::Working => Duration::from_secs(5),
+            _ => Duration::from_secs(30),
+        };
+        (self.at.elapsed() < ttl).then_some(self.state)
+    }
+}
+
 /// Minimum gap between two "needs you" notifications for the same agent.
 const NEEDS_YOU_AGAIN: Duration = Duration::from_secs(20);
 
@@ -160,8 +179,10 @@ fn update(state: &mut AppState, scan: Option<&Processes>, notices: &mut Vec<Pend
         agents,
         names,
         session,
+        reports,
         ..
     } = state;
+    reports.retain(|pane, _| ptys.contains_key(pane));
     let before = agents.len();
     agents.retain(|pane, _| ptys.contains_key(pane));
     let mut changed = agents.len() != before;
@@ -173,6 +194,7 @@ fn update(state: &mut AppState, scan: Option<&Processes>, notices: &mut Vec<Pend
             None => agents.get(pane).map(|entry| entry.def),
         };
         let Some(def) = found else {
+            reports.remove(pane);
             if agents.remove(pane).is_some() {
                 // The named agent quit; the name must not follow whatever runs there next.
                 names.remove(pane);
@@ -191,6 +213,7 @@ fn update(state: &mut AppState, scan: Option<&Processes>, notices: &mut Vec<Pend
         });
         if entry.def.id != def.id {
             names.remove(pane);
+            reports.remove(pane);
             *entry = AgentEntry {
                 def,
                 tracker: StateTracker::default(),
@@ -206,7 +229,15 @@ fn update(state: &mut AppState, scan: Option<&Processes>, notices: &mut Vec<Pend
         } else {
             AgentState::Idle
         };
-        let verdict = def.detect(&screen.title, &screen.rows).unwrap_or(fallback);
+        let verdict = match (
+            def.detect(&screen.title, &screen.rows),
+            reports.get(pane).and_then(Report::current),
+        ) {
+            // A dialog on screen is never stale, whatever the hooks said last.
+            (Some(AgentState::Blocked), _) => AgentState::Blocked,
+            (_, Some(reported)) => reported,
+            (detected, None) => detected.unwrap_or(fallback),
+        };
         let (before, since) = (entry.tracker.state, entry.since);
         if entry.tracker.observe(verdict, now) {
             entry.since = unix_ms();

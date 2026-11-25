@@ -56,6 +56,14 @@ pub enum Request {
     AgentWait { target: String, timeout_secs: u64 },
     #[serde(rename = "agent.list")]
     AgentList,
+    /// From an agent's own hooks: its exact state (`None` to go back to reading the screen).
+    #[serde(rename = "agent.report")]
+    AgentReport {
+        pane: PaneId,
+        /// The reporting Claude session: a nested `claude` in the same pane must not overwrite it.
+        session: String,
+        state: Option<crate::agents::AgentState>,
+    },
 }
 
 pub type Response = Result<serde_json::Value, String>;

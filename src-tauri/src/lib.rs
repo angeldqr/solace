@@ -21,6 +21,8 @@ pub struct AppState {
     agents: HashMap<PaneId, agents::AgentEntry>,
     /// Names given to agents by `solace agent start`; runtime only.
     names: HashMap<PaneId, String>,
+    /// States agents announced through their hooks, with when; they outrank screen reading.
+    reports: HashMap<PaneId, agents::Report>,
     watchers: files::Watchers,
     file_events: std::sync::mpsc::Sender<solace_core::spaces::SpaceId>,
     file: PathBuf,
@@ -75,6 +77,7 @@ pub fn run() {
                 ptys: HashMap::new(),
                 agents: HashMap::new(),
                 names: HashMap::new(),
+                reports: HashMap::new(),
                 watchers: Default::default(),
                 file_events: files::spawn_relay(app.handle().clone()),
                 file,
@@ -92,6 +95,8 @@ pub fn run() {
             }
             let handle = app.handle().clone();
             std::thread::spawn(move || agents::watch(handle));
+            let handle = app.handle().clone();
+            std::thread::spawn(move || settings::refresh_claude_integration(&handle));
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -121,6 +126,8 @@ pub fn run() {
             settings::notifications_set,
             settings::locale_set,
             settings::system_toasts_enabled,
+            settings::claude_integration_installed,
+            settings::claude_integration_set,
         ])
         .build(tauri::generate_context!())
         .expect("error while building Solace");

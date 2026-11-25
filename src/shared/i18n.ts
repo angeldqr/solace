@@ -71,6 +71,9 @@ const en = {
   updateReady: "version {version} ready, restart to update",
   notifications: "Notifications",
   checkUpdates: "Check for updates automatically",
+  claudeIntegration: "Claude Code integration",
+  claudeIntegrationHint:
+    "Adds hooks to ~/.claude/settings.json so Claude Code reports its exact state, and installs the skill that teaches it the solace command. Your own hooks are kept, and a backup of the file is made first.",
   privacyNote:
     "Solace sends no usage data. Its only requests are to GitHub, to check for and download updates.",
   notifyAgents: "Notify me when an agent I'm not watching needs me or finishes",
@@ -155,6 +158,9 @@ const es: Messages = {
   updateReady: "versión {version} lista, reinicia para actualizar",
   notifications: "Notificaciones",
   checkUpdates: "Buscar actualizaciones automáticamente",
+  claudeIntegration: "Integración con Claude Code",
+  claudeIntegrationHint:
+    "Agrega hooks en ~/.claude/settings.json para que Claude Code informe su estado exacto, e instala el skill que le enseña el comando solace. Tus hooks se conservan y antes se guarda una copia del archivo.",
   privacyNote:
     "Solace no envía datos de uso. Solo se conecta a GitHub para buscar y descargar actualizaciones.",
   notifyAgents: "Avisarme cuando un agente que no estoy mirando me necesite o termine",

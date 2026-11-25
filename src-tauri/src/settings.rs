@@ -81,3 +81,55 @@ pub fn locale_set(state: State<Shared>, locale: String) {
 pub fn system_toasts_enabled() -> bool {
     solace_infra::system::toasts_enabled()
 }
+
+fn claude_paths() -> Result<solace_infra::integrations::ClaudePaths, String> {
+    let home = std::env::var_os("USERPROFILE")
+        .or_else(|| std::env::var_os("HOME"))
+        .ok_or("no home directory")?;
+    Ok(solace_infra::integrations::ClaudePaths::in_home(
+        std::path::Path::new(&home),
+    ))
+}
+
+#[tauri::command(async)]
+pub fn claude_integration_installed() -> Result<bool, String> {
+    Ok(solace_infra::integrations::claude_installed(
+        &claude_paths()?
+    ))
+}
+
+/// The `solace` CLI shipped with this app; hooks point at it so they survive updates.
+fn bundled_cli(app: &tauri::AppHandle) -> Result<PathBuf, String> {
+    use tauri::Manager;
+    let dir = app.path().resource_dir().map_err(|e| e.to_string())?;
+    Ok(dir.join("bin").join(if cfg!(windows) {
+        "solace.exe"
+    } else {
+        "solace"
+    }))
+}
+
+#[tauri::command(async)]
+pub fn claude_integration_set(app: tauri::AppHandle, enabled: bool) -> Result<(), String> {
+    let paths = claude_paths()?;
+    let result = if enabled {
+        solace_infra::integrations::install_claude(&paths, &bundled_cli(&app)?)
+    } else {
+        solace_infra::integrations::uninstall_claude(&paths)
+    };
+    result.map_err(|e| e.to_string())
+}
+
+/// Re-points installed hooks at this copy of Solace (it may have moved) and refreshes the skill.
+/// Release builds only: a dev build must not aim the user's hooks at `target/`.
+pub fn refresh_claude_integration(app: &tauri::AppHandle) {
+    if cfg!(debug_assertions) {
+        return;
+    }
+    let (Ok(paths), Ok(exe)) = (claude_paths(), bundled_cli(app)) else {
+        return;
+    };
+    if solace_infra::integrations::claude_installed(&paths) {
+        let _ = solace_infra::integrations::install_claude(&paths, &exe);
+    }
+}
