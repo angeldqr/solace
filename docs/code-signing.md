@@ -17,6 +17,7 @@ release workflow publishes unsigned builds, exactly as before.
 Signing runs only when the repository variable `SIGNPATH_ORGANIZATION_ID` is set.
 
 `Solace.exe` itself is not signed yet, because `tauri bundle` rewrites a marker inside it for each installer type, which would void an earlier signature. The installers, which are what Windows SmartScreen checks on download, are signed. To sign it too later:
+
 1. Make one copy of `Solace.exe` per installer type, with the marker already set (`__TAURI_BUNDLE_TYPE_VAR_UNK` replaced by `VAR_NSS` or `VAR_MSI`; same length).
 2. Sign both copies.
 3. Run `tauri bundle -b nsis` and `tauri bundle -b msi` separately, each with its copy in place.
