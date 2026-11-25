@@ -5,7 +5,10 @@ use serde::Serialize;
 use solace_core::agents::{AgentDef, AgentState, StateTracker};
 use solace_core::terminals::PaneId;
 use solace_infra::processes::Processes;
-use tauri::{AppHandle, Emitter, Manager};
+use tauri::{AppHandle, Emitter, Manager, UserAttentionType};
+use tauri_plugin_notification::NotificationExt;
+
+use crate::notify::{Notice, notice, text};
 
 use crate::{AppState, Shared};
 
@@ -78,22 +81,68 @@ pub fn watch(app: AppHandle) {
         let scanned = tick.is_multiple_of(SCAN_EVERY);
         let state = app.state::<Shared>();
         let mut state = state.lock().unwrap();
-        if update(&mut state, scanned.then_some(&processes)) {
+        let mut notices = Vec::new();
+        if update(&mut state, scanned.then_some(&processes), &mut notices) {
             let _ = app.emit("agents", views(&state));
         }
+        let (enabled, locale) = (state.settings.notifications, state.locale.clone());
         drop(state);
+        if enabled && !notices.is_empty() {
+            deliver(&app, notices, &locale);
+        }
         tick = tick.wrapping_add(1);
         thread::sleep(TICK);
     }
 }
 
+/// A state change the user may want to hear about, with what's needed to phrase it.
+struct Pending {
+    notice: Notice,
+    agent: &'static str,
+    label: Option<String>,
+    space: String,
+    /// The pane is in the tab on screen; with the window focused, the user already sees it.
+    in_view: bool,
+}
+
+/// Native notifications for agents the user isn't looking at; an agent that needs them also
+/// flashes the taskbar button until the window is focused.
+fn deliver(app: &AppHandle, notices: Vec<Pending>, locale: &str) {
+    let window = app.get_webview_window("main");
+    let focused = window
+        .as_ref()
+        .is_some_and(|w| w.is_focused().unwrap_or(false));
+    for pending in notices {
+        if focused && pending.in_view {
+            continue;
+        }
+        let (title, body) = text(
+            &pending.notice,
+            pending.agent,
+            pending.label.as_deref(),
+            &pending.space,
+            locale,
+        );
+        if let Err(err) = app.notification().builder().title(title).body(body).show() {
+            eprintln!("could not show a notification: {err}");
+        }
+        if pending.notice == Notice::NeedsYou
+            && !focused
+            && let Some(window) = &window
+        {
+            let _ = window.request_user_attention(Some(UserAttentionType::Informational));
+        }
+    }
+}
+
 /// True when anything the UI shows changed. Agents are re-identified only after a fresh scan;
 /// between scans the screen is still read every tick.
-fn update(state: &mut AppState, scan: Option<&Processes>) -> bool {
+fn update(state: &mut AppState, scan: Option<&Processes>, notices: &mut Vec<Pending>) -> bool {
     let AppState {
         ptys,
         agents,
         names,
+        session,
         ..
     } = state;
     let before = agents.len();
@@ -139,9 +188,30 @@ fn update(state: &mut AppState, scan: Option<&Processes>) -> bool {
             AgentState::Idle
         };
         let verdict = def.detect(&screen.title, &screen.rows).unwrap_or(fallback);
+        let (before, since) = (entry.tracker.state, entry.since);
         if entry.tracker.observe(verdict, now) {
             entry.since = unix_ms();
             changed = true;
+            let worked = Duration::from_millis(entry.since.saturating_sub(since));
+            if let Some(notice) = notice(before, entry.tracker.state, worked) {
+                let space = session
+                    .spaces
+                    .iter()
+                    .find(|s| s.tabs.iter().any(|t| t.layout.contains(*pane)));
+                let in_view = session.active_space == space.map(|s| s.id)
+                    && space.is_some_and(|s| {
+                        s.tabs
+                            .iter()
+                            .any(|t| Some(t.id) == s.active_tab && t.layout.contains(*pane))
+                    });
+                notices.push(Pending {
+                    notice,
+                    agent: &def.name,
+                    label: names.get(pane).cloned(),
+                    space: space.map(|s| s.name.clone()).unwrap_or_default(),
+                    in_view,
+                });
+            }
         }
     }
     changed

@@ -8,12 +8,28 @@ use tauri::State;
 use crate::Shared;
 
 /// Settings the backend needs; look-and-feel settings live in the UI.
-#[derive(Clone, Default, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AppSettings {
     /// Shell for new terminals; the platform default when unset.
     #[serde(default)]
     pub shell: Option<PathBuf>,
+    /// Notify when an agent the user isn't watching needs them or finishes.
+    #[serde(default = "on")]
+    pub notifications: bool,
+}
+
+fn on() -> bool {
+    true
+}
+
+impl Default for AppSettings {
+    fn default() -> Self {
+        Self {
+            shell: None,
+            notifications: true,
+        }
+    }
 }
 
 /// Async: the PATH scan can be slow (network drives) and must not freeze the window.
@@ -43,4 +59,25 @@ pub fn shell_set(state: State<Shared>, path: Option<String>) -> Result<(), Strin
     let mut state = state.lock().unwrap();
     state.settings.shell = shell;
     persist::save(&state.settings_file, &state.settings).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn notifications_set(state: State<Shared>, enabled: bool) -> Result<(), String> {
+    let mut state = state.lock().unwrap();
+    state.settings.notifications = enabled;
+    persist::save(&state.settings_file, &state.settings).map_err(|e| e.to_string())
+}
+
+/// The UI's language, so notifications sent from here match it.
+#[tauri::command]
+pub fn locale_set(state: State<Shared>, locale: String) {
+    if locale == "es" || locale == "en" {
+        state.lock().unwrap().locale = locale;
+    }
+}
+
+/// False when the OS has notifications switched off, so the UI can say why none appear.
+#[tauri::command]
+pub fn system_toasts_enabled() -> bool {
+    solace_infra::system::toasts_enabled()
 }

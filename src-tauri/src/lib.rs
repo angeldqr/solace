@@ -1,6 +1,7 @@
 mod agents;
 mod commands;
 mod files;
+mod notify;
 mod orchestration;
 mod settings;
 
@@ -25,6 +26,8 @@ pub struct AppState {
     file: PathBuf,
     settings: settings::AppSettings,
     settings_file: PathBuf,
+    /// "en" or "es", reported by the UI.
+    locale: String,
 }
 
 /// Where the `solace` CLI reaches this app; fixed for the life of the process.
@@ -57,6 +60,7 @@ pub fn run() {
         }))
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
         .setup(|app| {
@@ -76,6 +80,7 @@ pub fn run() {
                 file,
                 settings,
                 settings_file,
+                locale: "en".into(),
             }));
             files::sync_watchers(&app.state::<Shared>().lock().unwrap());
             let handle = app.handle().clone();
@@ -113,6 +118,9 @@ pub fn run() {
             settings::shells_list,
             settings::settings_get,
             settings::shell_set,
+            settings::notifications_set,
+            settings::locale_set,
+            settings::system_toasts_enabled,
         ])
         .build(tauri::generate_context!())
         .expect("error while building Solace");

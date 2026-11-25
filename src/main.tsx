@@ -10,9 +10,12 @@ import { activeTheme, applyTheme, useSettings } from "./features/settings/settin
 import { startUpdates } from "./features/updates/updates";
 import { startAgents } from "./shared/agents";
 import { locale } from "./shared/i18n";
+import { api } from "./shared/ipc";
 import { current, startSession } from "./shared/session";
 
 document.documentElement.lang = locale;
+// Notifications are sent by the backend; they should speak the UI's language.
+void api.localeSet(locale);
 applyTheme(activeTheme());
 useSettings.subscribe((settings) => applyTheme(activeTheme(settings)));
 void startSession();

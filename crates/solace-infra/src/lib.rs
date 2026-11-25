@@ -6,4 +6,5 @@ pub mod ipc;
 pub mod persist;
 pub mod processes;
 pub mod pty;
+pub mod system;
 pub mod watch;

@@ -68,6 +68,7 @@ function Dialog() {
           <Appearance />
           <TerminalSection />
           <ShellSection />
+          <NotificationsSection />
           <LanguageSection />
           <About />
         </div>
@@ -309,6 +310,32 @@ function ShellSection() {
         </select>
       </Field>
       {error && <p className="text-red-500">{error}</p>}
+    </Section>
+  );
+}
+
+function NotificationsSection() {
+  const [enabled, setEnabled] = useState<boolean | null>(null);
+  const [systemOn, setSystemOn] = useState(true);
+  useEffect(() => {
+    void api.settingsGet().then((settings) => setEnabled(settings.notifications));
+    void api.systemToastsEnabled().then(setSystemOn);
+  }, []);
+  if (enabled === null) return null;
+  return (
+    <Section title="notifications">
+      <Field label={t("notifyAgents")}>
+        <input
+          type="checkbox"
+          checked={enabled}
+          onChange={(event) => {
+            setEnabled(event.target.checked);
+            void api.notificationsSet(event.target.checked);
+          }}
+          className="size-4 accent-[var(--color-primary)]"
+        />
+      </Field>
+      {enabled && !systemOn && <p className="text-2xs text-fg-subtle">{t("systemToastsOff")}</p>}
     </Section>
   );
 }

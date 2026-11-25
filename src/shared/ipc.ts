@@ -75,6 +75,9 @@ export const api = {
     invoke<string>("git_diff", { space, path, untracked }),
   fileOpen: (space: SpaceId, path: string) => invoke("file_open", { space, path }),
   shellsList: () => invoke<Shell[]>("shells_list"),
-  settingsGet: () => invoke<{ shell: string | null }>("settings_get"),
+  settingsGet: () => invoke<{ shell: string | null; notifications: boolean }>("settings_get"),
+  notificationsSet: (enabled: boolean) => invoke("notifications_set", { enabled }),
+  localeSet: (locale: string) => invoke("locale_set", { locale }),
+  systemToastsEnabled: () => invoke<boolean>("system_toasts_enabled"),
   shellSet: (path: string | null) => invoke("shell_set", { path }),
 };
