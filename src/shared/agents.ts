@@ -11,6 +11,8 @@ export interface AgentView {
   /** Catalog id, e.g. "claude". */
   agent: string;
   name: string;
+  /** Name given with `solace agent start`, e.g. "reviewer". */
+  label: string | null;
   state: AgentState;
   /** Unix ms of the last state change. */
   since: number;

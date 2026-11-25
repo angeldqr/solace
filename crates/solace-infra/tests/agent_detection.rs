@@ -29,11 +29,12 @@ fn fake_claude_under_the_shell_is_identified_and_working() {
     let pty = Pty::spawn(
         &dir,
         &[],
+        None,
         100,
         30,
-        Box::new(move |bytes| {
+        Some(Box::new(move |bytes| {
             let _ = tx.send(bytes);
-        }),
+        })),
         |_| {},
     )
     .unwrap();

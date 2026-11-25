@@ -27,6 +27,8 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm lint:ci
       - run: pnpm build
+      # tauri-build checks that the bundled CLI exists before compiling the app.
+      - run: node scripts/build-cli.mjs
       # Never ship a tag whose tests fail or whose Cargo.lock is stale.
       - run: cargo test --locked --workspace
       - uses: tauri-apps/tauri-action@v1

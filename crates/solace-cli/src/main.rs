@@ -1,0 +1,222 @@
+use std::io::{BufRead, BufReader, Write};
+use std::path::PathBuf;
+use std::process::ExitCode;
+
+use clap::{Parser, Subcommand};
+use interprocess::local_socket::{GenericNamespaced, Stream, ToNsName, prelude::*};
+use solace_core::orchestration::{Request, Response};
+use solace_core::terminals::{Direction, PaneId};
+
+const SKILL: &str = include_str!("../../../skills/solace/SKILL.md");
+
+/// Control the Solace workspace you are running in.
+#[derive(Parser)]
+#[command(name = "solace", version)]
+struct Cli {
+    #[command(subcommand)]
+    command: Command,
+}
+
+#[derive(Subcommand)]
+enum Command {
+    /// Panes: list, split, type into, read and close.
+    #[command(subcommand)]
+    Pane(PaneCommand),
+    /// Agents: start, prompt, wait for and list.
+    #[command(subcommand)]
+    Agent(AgentCommand),
+    /// Print the agent skill, or install it for Claude Code with `solace skill install`.
+    Skill { action: Option<String> },
+}
+
+#[derive(Subcommand)]
+enum PaneCommand {
+    List,
+    Split {
+        /// Pane to split; defaults to the one this command runs in.
+        #[arg(long)]
+        pane: Option<u32>,
+        /// Split below instead of to the right.
+        #[arg(long)]
+        down: bool,
+    },
+    /// Type text into a pane, then press Enter.
+    Send {
+        target: String,
+        text: String,
+        #[arg(long)]
+        no_enter: bool,
+    },
+    /// Print a pane's screen as text.
+    Read {
+        target: String,
+        /// Only the last N non-empty lines.
+        #[arg(long)]
+        lines: Option<usize>,
+    },
+    Close {
+        target: String,
+    },
+}
+
+#[derive(Subcommand)]
+enum AgentCommand {
+    /// Split this pane and start an agent in it.
+    Start {
+        name: String,
+        /// claude, codex, gemini, qwen, kimi, opencode, copilot, cursor or amp.
+        #[arg(long)]
+        kind: String,
+        #[arg(long)]
+        down: bool,
+        /// First task, sent once the agent is ready.
+        #[arg(long)]
+        prompt: Option<String>,
+    },
+    /// Send a prompt to an agent.
+    Prompt {
+        target: String,
+        text: String,
+        /// Wait until the agent stops working and print its screen.
+        #[arg(long)]
+        wait: bool,
+        /// Seconds; the default stays under the 2-minute limit agents' shell tools usually have.
+        #[arg(long, default_value_t = 110)]
+        timeout: u64,
+    },
+    /// Wait until an agent is idle or needs the user.
+    Wait {
+        target: String,
+        /// Seconds; the default stays under the 2-minute limit agents' shell tools usually have.
+        #[arg(long, default_value_t = 110)]
+        timeout: u64,
+    },
+    List,
+}
+
+fn caller_pane() -> Option<PaneId> {
+    std::env::var("SOLACE_PANE_ID")
+        .ok()?
+        .parse()
+        .ok()
+        .map(PaneId)
+}
+
+fn direction(down: bool) -> Direction {
+    if down {
+        Direction::Column
+    } else {
+        Direction::Row
+    }
+}
+
+fn request(command: Command) -> Result<Request, String> {
+    Ok(match command {
+        Command::Pane(PaneCommand::List) => Request::PaneList,
+        Command::Pane(PaneCommand::Split { pane, down }) => Request::PaneSplit {
+            pane: pane.map(PaneId).or_else(caller_pane),
+            direction: direction(down),
+        },
+        Command::Pane(PaneCommand::Send {
+            target,
+            text,
+            no_enter,
+        }) => Request::PaneSend {
+            target,
+            text,
+            enter: !no_enter,
+        },
+        Command::Pane(PaneCommand::Read { target, lines }) => Request::PaneRead { target, lines },
+        Command::Pane(PaneCommand::Close { target }) => Request::PaneClose { target },
+        Command::Agent(AgentCommand::Start {
+            name,
+            kind,
+            down,
+            prompt,
+        }) => Request::AgentStart {
+            name,
+            kind,
+            from: caller_pane(),
+            direction: direction(down),
+            prompt,
+        },
+        Command::Agent(AgentCommand::Prompt {
+            target,
+            text,
+            wait,
+            timeout,
+        }) => Request::AgentPrompt {
+            target,
+            text,
+            wait,
+            timeout_secs: timeout,
+        },
+        Command::Agent(AgentCommand::Wait { target, timeout }) => Request::AgentWait {
+            target,
+            timeout_secs: timeout,
+        },
+        Command::Agent(AgentCommand::List) => Request::AgentList,
+        Command::Skill { .. } => return Err("not a request".into()),
+    })
+}
+
+fn call(request: &Request) -> Result<serde_json::Value, String> {
+    // Each Solace launch picks a new pipe name and hands it to its shells.
+    let name = std::env::var("SOLACE_PIPE")
+        .ok()
+        .filter(|name| !name.is_empty())
+        .ok_or("not inside a Solace terminal (SOLACE_PIPE is not set)")?;
+    let name = name
+        .as_str()
+        .to_ns_name::<GenericNamespaced>()
+        .map_err(|e| e.to_string())?;
+    let stream = Stream::connect(name)
+        .map_err(|err| format!("could not reach Solace ({err}); is the app still running?"))?;
+    let mut line = serde_json::to_vec(request).map_err(|e| e.to_string())?;
+    line.push(b'\n');
+    (&stream).write_all(&line).map_err(|e| e.to_string())?;
+    let mut reply = String::new();
+    BufReader::new(&stream)
+        .read_line(&mut reply)
+        .map_err(|e| e.to_string())?;
+    serde_json::from_str::<Response>(&reply).map_err(|e| format!("bad reply from Solace: {e}"))?
+}
+
+fn install_skill() -> Result<serde_json::Value, String> {
+    let home = std::env::var_os("USERPROFILE")
+        .or_else(|| std::env::var_os("HOME"))
+        .ok_or("no home directory")?;
+    let dir = PathBuf::from(home).join(".claude/skills/solace");
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    let path = dir.join("SKILL.md");
+    std::fs::write(&path, SKILL).map_err(|e| e.to_string())?;
+    Ok(serde_json::json!({ "installed": path }))
+}
+
+fn main() -> ExitCode {
+    let command = Cli::parse().command;
+    let result = match command {
+        Command::Skill { action: None } => {
+            print!("{SKILL}");
+            return ExitCode::SUCCESS;
+        }
+        Command::Skill { action: Some(a) } if a == "install" => install_skill(),
+        Command::Skill { action: Some(a) } => {
+            Err(format!("unknown skill action {a:?}; try install"))
+        }
+        command => request(command).and_then(|r| call(&r)),
+    };
+    match result {
+        Ok(value) => {
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&value).unwrap_or_default()
+            );
+            ExitCode::SUCCESS
+        }
+        Err(message) => {
+            eprintln!("solace: {message}");
+            ExitCode::FAILURE
+        }
+    }
+}

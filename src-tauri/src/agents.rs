@@ -29,8 +29,16 @@ pub struct AgentView {
     pane: PaneId,
     agent: &'static str,
     name: &'static str,
+    /// Name given by `solace agent start`, if any.
+    label: Option<String>,
     state: AgentState,
     since: u64,
+}
+
+/// The agent running in `pane` (catalog id) and its state.
+pub fn agent_in(state: &AppState, pane: PaneId) -> Option<(&'static str, AgentState)> {
+    let entry = state.agents.get(&pane)?;
+    Some((entry.def.id.as_str(), entry.tracker.state))
 }
 
 pub fn views(state: &AppState) -> Vec<AgentView> {
@@ -41,6 +49,7 @@ pub fn views(state: &AppState) -> Vec<AgentView> {
             pane,
             agent: &entry.def.id,
             name: &entry.def.name,
+            label: state.names.get(&pane).cloned(),
             state: entry.tracker.state,
             since: entry.since,
         })
@@ -81,7 +90,12 @@ pub fn watch(app: AppHandle) {
 /// True when anything the UI shows changed. Agents are re-identified only after a fresh scan;
 /// between scans the screen is still read every tick.
 fn update(state: &mut AppState, scan: Option<&Processes>) -> bool {
-    let AppState { ptys, agents, .. } = state;
+    let AppState {
+        ptys,
+        agents,
+        names,
+        ..
+    } = state;
     let before = agents.len();
     agents.retain(|pane, _| ptys.contains_key(pane));
     let mut changed = agents.len() != before;
@@ -93,7 +107,11 @@ fn update(state: &mut AppState, scan: Option<&Processes>) -> bool {
             None => agents.get(pane).map(|entry| entry.def),
         };
         let Some(def) = found else {
-            changed |= agents.remove(pane).is_some();
+            if agents.remove(pane).is_some() {
+                // The named agent quit; the name must not follow whatever runs there next.
+                names.remove(pane);
+                changed = true;
+            }
             continue;
         };
         let entry = agents.entry(*pane).or_insert_with(|| {
@@ -105,6 +123,7 @@ fn update(state: &mut AppState, scan: Option<&Processes>) -> bool {
             }
         });
         if entry.def.id != def.id {
+            names.remove(pane);
             *entry = AgentEntry {
                 def,
                 tracker: StateTracker::default(),

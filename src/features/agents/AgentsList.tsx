@@ -67,7 +67,7 @@ function AgentRow(props: {
       className="flex h-8 w-full items-center gap-2.5 rounded-md px-2 text-left text-fg-muted transition-colors duration-150 hover:bg-hover hover:text-fg"
     >
       <AgentIcon agent={props.agent.agent} className="size-4" />
-      <span className="truncate">{props.agent.name}</span>
+      <span className="truncate">{props.agent.label ?? props.agent.name}</span>
       {props.space && <span className="truncate text-2xs text-fg-subtle">{props.space}</span>}
       <span className="ml-auto shrink-0 text-2xs text-fg-subtle tabular-nums">{props.elapsed}</span>
       <StatusDot status={props.status} />

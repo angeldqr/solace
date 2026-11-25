@@ -120,11 +120,17 @@ impl Session {
 
     /// Splits `pane` and focuses the new pane.
     pub fn split_pane(&mut self, pane: PaneId, direction: Direction) -> Option<PaneId> {
+        let new = self.split_pane_unfocused(pane, direction)?;
+        self.focus_pane(new);
+        Some(new)
+    }
+
+    /// Splits `pane` without touching focus or the active tab and space: for panes agents open
+    /// while the user may be typing somewhere else.
+    pub fn split_pane_unfocused(&mut self, pane: PaneId, direction: Direction) -> Option<PaneId> {
         let (si, ti) = self.locate(pane)?;
         let new = PaneId(self.next_id());
-        let tab = &mut self.spaces[si].tabs[ti];
-        tab.layout.split(pane, direction, new);
-        tab.focused = new;
+        self.spaces[si].tabs[ti].layout.split(pane, direction, new);
         Some(new)
     }
 
@@ -249,6 +255,21 @@ mod tests {
         assert_eq!(s.active_space, Some(a));
         assert_eq!(s.spaces[0].active_tab, Some(s.spaces[0].tabs[0].id));
         assert_eq!(s.pane_root(pane), Some(Path::new("/a")));
+    }
+
+    #[test]
+    fn unfocused_split_leaves_the_users_place_alone() {
+        let mut s = Session::default();
+        let a = s.open_space(PathBuf::from("/a"));
+        let agent_pane = s.spaces[0].tabs[0].focused;
+        let user_pane = s.new_tab(a).unwrap();
+        let before = s.clone();
+
+        let new = s.split_pane_unfocused(agent_pane, Direction::Row).unwrap();
+        assert!(s.spaces[0].tabs[0].layout.contains(new));
+        assert_eq!(s.spaces[0].active_tab, before.spaces[0].active_tab);
+        assert_eq!(s.spaces[0].tabs[1].focused, user_pane);
+        assert_eq!(s.spaces[0].tabs[0].focused, agent_pane);
     }
 
     #[test]

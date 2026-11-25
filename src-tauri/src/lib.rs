@@ -1,5 +1,6 @@
 mod agents;
 mod commands;
+mod orchestration;
 
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -15,7 +16,25 @@ pub struct AppState {
     session: Session,
     ptys: HashMap<PaneId, Pty>,
     agents: HashMap<PaneId, agents::AgentEntry>,
+    /// Names given to agents by `solace agent start`; runtime only.
+    names: HashMap<PaneId, String>,
     file: PathBuf,
+}
+
+/// Where the `solace` CLI reaches this app; fixed for the life of the process.
+pub(crate) fn endpoint() -> &'static str {
+    static ENDPOINT: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+    ENDPOINT.get_or_init(|| {
+        use std::hash::{BuildHasher, Hasher};
+        let user = std::env::var("USERNAME")
+            .or_else(|_| std::env::var("USER"))
+            .unwrap_or_default();
+        // RandomState is seeded from the OS: enough to make the name unguessable.
+        let nonce = std::collections::hash_map::RandomState::new()
+            .build_hasher()
+            .finish();
+        solace_core::orchestration::endpoint_name(&user, nonce)
+    })
 }
 
 type Shared = Mutex<AppState>;
@@ -41,8 +60,16 @@ pub fn run() {
                 session,
                 ptys: HashMap::new(),
                 agents: HashMap::new(),
+                names: HashMap::new(),
                 file,
             }));
+            let handle = app.handle().clone();
+            if let Err(err) = solace_infra::ipc::serve(endpoint(), move |request| {
+                orchestration::handle(&handle, request)
+            }) {
+                // The app still works; only `solace` commands are unavailable.
+                eprintln!("orchestration API unavailable: {err}");
+            }
             let handle = app.handle().clone();
             std::thread::spawn(move || agents::watch(handle));
             Ok(())

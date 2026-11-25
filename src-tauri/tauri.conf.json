@@ -3,9 +3,9 @@
   "productName": "Solace",
   "identifier": "dev.solace.desktop",
   "build": {
-    "beforeDevCommand": "pnpm dev",
+    "beforeDevCommand": "node scripts/build-cli.mjs && pnpm dev",
     "devUrl": "http://localhost:1420",
-    "beforeBuildCommand": "pnpm build",
+    "beforeBuildCommand": "node scripts/build-cli.mjs release && pnpm build",
     "frontendDist": "../dist"
   },
   "app": {
@@ -46,7 +46,10 @@
         "installMode": "currentUser"
       }
     },
-    "createUpdaterArtifacts": true
+    "createUpdaterArtifacts": true,
+    "resources": {
+      "binaries/solace.exe": "bin/solace.exe"
+    }
   },
   "mainBinaryName": "Solace",
   "plugins": {

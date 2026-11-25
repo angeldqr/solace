@@ -31,7 +31,13 @@ export function startUpdates() {
 export async function restartToUpdate() {
   const update = useUpdate.getState().ready;
   if (!update) return;
-  // On Windows the installer takes over here and reopens Solace when done.
-  await update.install();
-  await relaunch();
+  try {
+    // On Windows the installer takes over here and reopens Solace when done.
+    await update.install();
+    await relaunch();
+  } catch (error) {
+    // Drop the broken download; the next check fetches it again.
+    useUpdate.setState({ ready: null });
+    console.error("update install failed", error);
+  }
 }

@@ -34,7 +34,7 @@ export function TabBar({ space }: { space: Space }) {
                 <SquareTerminal className="size-3.5 shrink-0" aria-hidden />
               )}
               <span className="truncate">
-                {agent?.name ?? displayTitle(titles[tab.focused], t("terminal"))}
+                {agent?.label ?? agent?.name ?? displayTitle(titles[tab.focused], t("terminal"))}
               </span>
             </button>
             <IconButton

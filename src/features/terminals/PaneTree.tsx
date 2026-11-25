@@ -91,7 +91,11 @@ function TerminalPane({ space, pane, focused }: { space: Space; pane: PaneId; fo
   const shellTitle = useSession((s) => s.titles[pane]);
   const agent = useAgent(pane);
   const done = useAgents((s) => s.done);
-  const title = agent?.name ?? displayTitle(shellTitle, t("terminal"));
+  const title = agent
+    ? agent.label
+      ? `${agent.label} · ${agent.name}`
+      : agent.name
+    : displayTitle(shellTitle, t("terminal"));
 
   useEffect(() => {
     if (host.current) return mountTerminal(pane, host.current);

@@ -63,7 +63,7 @@ pub struct Pty {
     master: Arc<Mutex<Option<Box<dyn MasterPty + Send>>>>,
     input: mpsc::Sender<Vec<u8>>,
     killer: Box<dyn ChildKiller + Send + Sync>,
-    output: Arc<Mutex<Output>>,
+    output: Arc<Mutex<Option<Output>>>,
     paused: Arc<(Mutex<bool>, Condvar)>,
     screen: Arc<Mutex<Screen>>,
     activity: Arc<Mutex<Activity>>,
@@ -74,9 +74,11 @@ impl Pty {
     pub fn spawn(
         cwd: &Path,
         env: &[(&str, String)],
+        bin_dir: Option<&Path>,
         cols: u16,
         rows: u16,
-        output: Output,
+        // None: nobody is watching yet (a pane an agent opened); see the flusher.
+        output: Option<Output>,
         on_exit: impl FnOnce(Option<u32>) + Send + 'static,
     ) -> Result<Pty, PtyError> {
         let pair = native_pty_system().openpty(size(cols, rows))?;
@@ -96,6 +98,14 @@ impl Pty {
             .collect();
         for key in bad {
             cmd.env_remove(key);
+        }
+        if let Some(dir) = bin_dir {
+            // Puts the `solace` CLI on PATH for shells and the agents they start.
+            let path = cmd.get_env("PATH").map(std::env::split_paths);
+            let paths = std::iter::once(dir.to_path_buf()).chain(path.into_iter().flatten());
+            if let Ok(joined) = std::env::join_paths(paths) {
+                cmd.env("PATH", joined);
+            }
         }
         cmd.env("TERM", "xterm-256color");
         cmd.env("COLORTERM", "truecolor");
@@ -169,6 +179,7 @@ impl Pty {
 
         let (status_tx, status_rx) = mpsc::channel::<Option<u32>>();
         let sink = Arc::clone(&output);
+        let replies = input.clone();
         let mirror = Arc::clone(&screen);
         let activity_log = Arc::clone(&activity);
         thread::spawn(move || {
@@ -185,14 +196,15 @@ impl Pty {
                 // Holding the sink while updating the mirror keeps a repaint (set_output) from
                 // also receiving a chunk it already contains.
                 let mut sink = sink.lock().unwrap();
-                {
+                let cursor = {
                     let mut screen = lock_screen(&mirror);
                     if panic::catch_unwind(AssertUnwindSafe(|| screen.process(&pending))).is_err() {
                         let (rows, cols) = screen.screen().size();
                         *screen =
                             Screen::new_with_callbacks(rows, cols, 0, TitleTracker::default());
                     }
-                }
+                    screen.screen().cursor_position()
+                };
                 let now = Instant::now();
                 let mut activity = activity_log.lock().unwrap();
                 if now.duration_since(activity.last) >= QUIET {
@@ -200,14 +212,25 @@ impl Pty {
                 }
                 activity.last = now;
                 drop(activity);
-                sink(pending);
+                match sink.as_mut() {
+                    Some(sink) => sink(pending),
+                    // Unwatched, so answer cursor-position queries as a terminal would: ConPTY
+                    // sends one at startup and the shell waits for the reply before running.
+                    None if pending.windows(4).any(|w| w == b"\x1b[6n") => {
+                        let (row, col) = cursor;
+                        let _ = replies.send(format!("\x1b[{};{}R", row + 1, col + 1).into_bytes());
+                    }
+                    None => {}
+                }
             }
             // The waiter reports before it closes the pty, which is what ended the output.
             let code = status_rx.recv().ok().flatten();
             if code != Some(0) {
                 let code = code.map_or("unknown".to_string(), |c| (c as i32).to_string());
                 let note = format!("\r\n\x1b[2m[process exited with code {code}]\x1b[0m\r\n");
-                (sink.lock().unwrap())(note.into_bytes());
+                if let Some(sink) = sink.lock().unwrap().as_mut() {
+                    sink(note.into_bytes());
+                }
             }
             on_exit(code);
         });
@@ -263,7 +286,7 @@ impl Pty {
                 .state_formatted()
                 .into_bytes(),
         );
-        *current = output;
+        *current = Some(output);
     }
 
     pub fn snapshot(&self) -> Snapshot {
@@ -273,6 +296,11 @@ impl Pty {
             title: screen.callbacks().title.clone(),
             rows: screen.screen().rows(0, cols.get()).collect(),
         }
+    }
+
+    /// Whether the program in the pane asked for bracketed paste.
+    pub fn bracketed_paste(&self) -> bool {
+        lock_screen(&self.screen).screen().bracketed_paste()
     }
 
     /// How long output has been streaming without a pause; `None` once it has gone quiet.
@@ -355,17 +383,40 @@ mod tests {
     }
 
     #[test]
+    fn unwatched_shell_still_starts_and_runs_commands() {
+        // No sink: Solace itself must answer ConPTY's startup cursor query.
+        let pty = Pty::spawn(&std::env::temp_dir(), &[], None, 80, 24, None, |_| {}).unwrap();
+        pty.write(b"echo headless-ok\r".to_vec());
+        let deadline = Instant::now() + Duration::from_secs(20);
+        while !pty
+            .snapshot()
+            .rows
+            .iter()
+            .any(|r| r.trim() == "headless-ok")
+        {
+            assert!(
+                Instant::now() < deadline,
+                "shell never ran: {:?}",
+                pty.snapshot().rows
+            );
+            thread::sleep(Duration::from_millis(100));
+        }
+        pty.kill();
+    }
+
+    #[test]
     fn spawned_shell_output_reaches_the_sink_and_exit_is_reported() {
         let (tx, rx) = mpsc::channel();
         let (exit_tx, exit_rx) = mpsc::channel();
         let pty = Pty::spawn(
             &std::env::temp_dir(),
             &[("SOLACE_TEST", "marker-42".into())],
+            None,
             80,
             24,
-            Box::new(move |bytes| {
+            Some(Box::new(move |bytes| {
                 let _ = tx.send(bytes);
-            }),
+            })),
             move |code| {
                 let _ = exit_tx.send(code);
             },

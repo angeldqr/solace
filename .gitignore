@@ -9,6 +9,7 @@ skills-lock.json
 
 # Rust
 target/
+src-tauri/binaries/
 
 # Node / Vite
 node_modules/

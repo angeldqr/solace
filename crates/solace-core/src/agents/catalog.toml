@@ -22,7 +22,7 @@ regex = '^[\x{2800}-\x{28FF}\x{25D0}-\x{25D3}] '
 [[agent.rule]]
 state = "blocked"
 region = "bottom:20"
-regex = '(?is)do you want to [^\n]*\?.*(?:❯|\byes\b)|enter to (?:confirm|select).*esc to cancel|waiting for permission|requests your input'
+regex = '(?is)do you want to [^\n]*\?.*(?:❯|\byes\b)|enter to (?:confirm|select).*esc to (?:cancel|exit)|do you trust the files|yes, proceed|waiting for permission|requests your input'
 # An empty input prompt means Claude is waiting for a new message, not for approval.
 not = '(?m)^\s*❯\s*$'
 

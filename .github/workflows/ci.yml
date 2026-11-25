@@ -55,6 +55,8 @@ jobs:
       # tauri::generate_context! embeds ../dist, so the frontend must be built first.
       - run: pnpm install --frozen-lockfile
       - run: pnpm build
+      # tauri-build checks that the bundled CLI exists before compiling the app.
+      - run: node scripts/build-cli.mjs
       - run: cargo fmt --all --check
       - run: cargo clippy --locked --workspace --all-targets -- -D warnings
       - run: cargo test --locked --workspace

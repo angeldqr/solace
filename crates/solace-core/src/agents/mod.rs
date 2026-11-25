@@ -96,6 +96,11 @@ pub fn identify(exe: &str, args: &[String]) -> Option<&'static AgentDef> {
 }
 
 impl AgentDef {
+    /// The command that starts this agent in a shell.
+    pub fn command(&self) -> Option<&str> {
+        self.executables.first().map(String::as_str)
+    }
+
     /// The state the screen shows, from the first matching rule; `None` when no rule applies.
     pub fn detect(&self, title: &str, rows: &[String]) -> Option<AgentState> {
         self.rules
@@ -235,6 +240,14 @@ mod tests {
             claude.detect("✳ Claude Code", &prompt),
             Some(AgentState::Blocked)
         );
+
+        let trust = screen(&[
+            "Do you trust the files in this folder?",
+            "❯ 1. Yes, proceed",
+            "  2. No, exit",
+            "Enter to confirm · Esc to exit",
+        ]);
+        assert_eq!(claude.detect("", &trust), Some(AgentState::Blocked));
 
         let busy = screen(&["✻ Thinking… (3s · esc to interrupt)", "", "❯ "]);
         assert_eq!(claude.detect("", &busy), Some(AgentState::Working));

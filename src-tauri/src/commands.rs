@@ -5,7 +5,7 @@ use serde::Serialize;
 use solace_core::session::Session;
 use solace_core::spaces::{SpaceId, TabId};
 use solace_core::terminals::{Direction, PaneId};
-use solace_infra::pty::Pty;
+use solace_infra::pty::{Output, Pty};
 use solace_infra::{git, persist};
 use tauri::ipc::{Channel, InvokeResponseBody};
 use tauri::{AppHandle, Emitter, Manager, State};
@@ -36,7 +36,7 @@ fn view(session: &Session) -> SessionView {
 }
 
 /// Persists and broadcasts the session after every change.
-fn commit(app: &AppHandle, state: &AppState) {
+pub(crate) fn commit(app: &AppHandle, state: &AppState) {
     if let Err(err) = persist::save(&state.file, &state.session) {
         eprintln!("could not save session: {err}");
     }
@@ -166,7 +166,7 @@ pub fn pty_attach(
 ) -> Result {
     let mut state = state.lock().unwrap();
     // Raw bytes reach JS as an ArrayBuffer; a Vec<u8> would be sent as a JSON array.
-    let sink = Box::new(move |bytes| {
+    let sink: Output = Box::new(move |bytes| {
         let _ = output.send(InvokeResponseBody::Raw(bytes));
     });
     if let Some(pty) = state.ptys.get(&pane) {
@@ -174,7 +174,19 @@ pub fn pty_attach(
         pty.set_paused(false);
         return pty.resize(cols, rows).map_err(|e| e.to_string());
     }
+    spawn_shell(&app, &mut state, pane, cols, rows, Some(sink))
+}
 
+/// Starts the shell for `pane`. The UI usually does this on first sight, but agents can open
+/// panes nobody is looking at yet; their output is mirrored and repainted when the UI attaches.
+pub(crate) fn spawn_shell(
+    app: &AppHandle,
+    state: &mut AppState,
+    pane: PaneId,
+    cols: u16,
+    rows: u16,
+    sink: Option<Output>,
+) -> Result {
     let cwd = state
         .session
         .pane_root(pane)
@@ -188,11 +200,21 @@ pub fn pty_attach(
         ("SOLACE_ENV", "1".to_string()),
         ("SOLACE_PANE_ID", pane.0.to_string()),
         ("SOLACE_SPACE_ID", space.0.to_string()),
+        ("SOLACE_PIPE", crate::endpoint().to_string()),
     ];
+    // The `solace` CLI ships in its own folder so the rest of the install dir (the uninstaller,
+    // the app itself) stays off the shell's PATH.
+    let bin_dir = app.path().resource_dir().ok().map(|dir| dir.join("bin"));
     let handle = app.clone();
-    let pty = Pty::spawn(&cwd, &env, cols, rows, sink, move |code| {
-        shell_exited(&handle, pane, code)
-    })
+    let pty = Pty::spawn(
+        &cwd,
+        &env,
+        bin_dir.as_deref(),
+        cols,
+        rows,
+        sink,
+        move |code| shell_exited(&handle, pane, code),
+    )
     .map_err(|e| e.to_string())?;
     state.ptys.insert(pane, pty);
     Ok(())
