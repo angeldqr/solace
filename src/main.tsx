@@ -6,12 +6,15 @@ import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { App } from "./app/App";
 import { startFileEvents } from "./features/files/panel";
+import { activeTheme, applyTheme, useSettings } from "./features/settings/settings";
 import { startUpdates } from "./features/updates/updates";
 import { startAgents } from "./shared/agents";
 import { locale } from "./shared/i18n";
 import { current, startSession } from "./shared/session";
 
 document.documentElement.lang = locale;
+applyTheme(activeTheme());
+useSettings.subscribe((settings) => applyTheme(activeTheme(settings)));
 void startSession();
 void startAgents();
 startUpdates();

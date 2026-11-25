@@ -18,7 +18,7 @@ export function TabBar({ space }: { space: Space }) {
           <div
             key={tab.id}
             className={`group flex h-7 max-w-52 items-center rounded-md transition-colors duration-150 ${
-              active ? "bg-white/[0.08] text-fg" : "text-fg-muted hover:bg-hover hover:text-fg"
+              active ? "bg-selected text-fg" : "text-fg-muted hover:bg-hover hover:text-fg"
             }`}
           >
             <button

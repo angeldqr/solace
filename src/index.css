@@ -1,5 +1,8 @@
 @import "tailwindcss";
 
+/* Light themes (data-theme on <html>, set by applyTheme). */
+@custom-variant light (&:where([data-theme="light"], [data-theme="light"] *));
+
 /* Design tokens. Dark-first; values start from T3 Code's quiet black palette. */
 @theme {
   --font-sans: "Inter Variable", "Segoe UI", system-ui, sans-serif;
@@ -11,9 +14,12 @@
   --color-fg-muted: var(--color-neutral-400);
   --color-fg-subtle: var(--color-neutral-500);
   --color-line: rgb(255 255 255 / 8%);
+  --color-line-strong: rgb(255 255 255 / 16%);
   --color-hover: rgb(255 255 255 / 6%);
+  --color-selected: rgb(255 255 255 / 8%);
   --color-primary: oklch(0.571 0.21 264);
   --color-primary-soft: oklch(0.82 0.08 264);
+  --color-on-primary: #ffffff;
   --color-pane: #0a0a0b;
 
   --text-2xs: 11px;
@@ -48,7 +54,7 @@
   }
   * {
     scrollbar-width: thin;
-    scrollbar-color: rgb(255 255 255 / 14%) transparent;
+    scrollbar-color: var(--color-line-strong) transparent;
   }
   :focus-visible {
     outline: 2px solid var(--color-primary);

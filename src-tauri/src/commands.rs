@@ -5,7 +5,7 @@ use serde::Serialize;
 use solace_core::session::Session;
 use solace_core::spaces::{SpaceId, TabId};
 use solace_core::terminals::{Direction, PaneId};
-use solace_infra::pty::{Output, Pty};
+use solace_infra::pty::{Launch, Output, Pty};
 use solace_infra::{git, persist};
 use tauri::ipc::{Channel, InvokeResponseBody};
 use tauri::{AppHandle, Emitter, Manager, State};
@@ -202,23 +202,34 @@ pub(crate) fn spawn_shell(
         ("SOLACE_PANE_ID", pane.0.to_string()),
         ("SOLACE_SPACE_ID", space.0.to_string()),
         ("SOLACE_PIPE", crate::endpoint().to_string()),
+        // Lets these through to a WSL shell, so `solace.exe` works there too.
+        ("WSLENV", wslenv()),
     ];
     // The `solace` CLI ships in its own folder so the rest of the install dir (the uninstaller,
     // the app itself) stays off the shell's PATH.
     let bin_dir = app.path().resource_dir().ok().map(|dir| dir.join("bin"));
     let handle = app.clone();
-    let pty = Pty::spawn(
-        &cwd,
-        &env,
-        bin_dir.as_deref(),
-        cols,
-        rows,
-        sink,
-        move |code| shell_exited(&handle, pane, code),
-    )
+    let launch = Launch {
+        cwd: &cwd,
+        env: &env,
+        bin_dir: bin_dir.as_deref(),
+        shell: state.settings.shell.as_deref(),
+    };
+    let pty = Pty::spawn(&launch, cols, rows, sink, move |code| {
+        shell_exited(&handle, pane, code)
+    })
     .map_err(|e| e.to_string())?;
     state.ptys.insert(pane, pty);
     Ok(())
+}
+
+/// The user's WSLENV plus Solace's variables.
+fn wslenv() -> String {
+    const OURS: &str = "SOLACE_ENV:SOLACE_PANE_ID:SOLACE_SPACE_ID:SOLACE_PIPE";
+    match std::env::var("WSLENV") {
+        Ok(existing) if !existing.is_empty() => format!("{existing}:{OURS}"),
+        _ => OURS.to_string(),
+    }
 }
 
 /// A shell ended on its own. If the pty is already gone, the pane was closed by the user or the

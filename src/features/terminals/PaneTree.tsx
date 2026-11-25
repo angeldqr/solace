@@ -112,7 +112,7 @@ function TerminalPane({ space, pane, focused }: { space: Space; pane: PaneId; fo
         if (!focused) void api.paneFocus(pane);
       }}
       className={`flex h-full min-h-0 min-w-0 flex-col overflow-hidden rounded-lg border bg-pane transition-colors duration-150 ${
-        focused ? "border-white/[0.16]" : "border-line"
+        focused ? "border-line-strong" : "border-line"
       }`}
     >
       <header className="group flex h-7 shrink-0 items-center gap-2 border-line border-b pr-1 pl-2.5 text-2xs">

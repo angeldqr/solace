@@ -7,7 +7,7 @@ use std::time::{Duration, Instant};
 
 use solace_core::agents::AgentState;
 use solace_infra::processes::Processes;
-use solace_infra::pty::Pty;
+use solace_infra::pty::{Launch, Pty};
 
 #[test]
 fn fake_claude_under_the_shell_is_identified_and_working() {
@@ -26,10 +26,14 @@ fn fake_claude_under_the_shell_is_identified_and_working() {
     .unwrap();
 
     let (tx, rx) = mpsc::channel::<Vec<u8>>();
+    let launch = Launch {
+        cwd: &dir,
+        env: &[],
+        bin_dir: None,
+        shell: None,
+    };
     let pty = Pty::spawn(
-        &dir,
-        &[],
-        None,
+        &launch,
         100,
         30,
         Some(Box::new(move |bytes| {

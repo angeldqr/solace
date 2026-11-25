@@ -5,17 +5,33 @@ import { WebglAddon } from "@xterm/addon-webgl";
 import { Terminal } from "@xterm/xterm";
 import { api, type PaneId } from "../../shared/ipc";
 import { panesOf, setTitle, useSession } from "../../shared/session";
-import { terminalTheme } from "./theme";
+import { activeTheme, terminalFontFamily, useSettings } from "../settings/settings";
 
 // xterm.js flow-control guide: pause the pty above HIGH unprocessed bytes; HIGH under ~500K keeps typing snappy.
 const HIGH = 256 * 1024;
 const LOW = 32 * 1024;
-const FONT_SIZE = 13;
-const FONT_FAMILY = '"JetBrains Mono Variable", "Cascadia Mono", Consolas, monospace';
-// The WebGL glyph atlas is measured on open, so the font must be loaded first.
-const fontsReady = document.fonts
-  .load(`${FONT_SIZE}px "JetBrains Mono Variable"`)
-  .catch(() => undefined);
+
+/** Options from the user's settings, for new terminals and live changes. */
+function terminalOptions() {
+  const s = useSettings.getState();
+  return {
+    fontFamily: terminalFontFamily(s.fontFamily),
+    fontSize: s.fontSize,
+    lineHeight: s.lineHeight,
+    cursorStyle: s.cursorStyle,
+    cursorBlink: s.cursorBlink,
+    theme: activeTheme(s).terminal,
+  };
+}
+
+/** The WebGL glyph atlas is measured on open, so the font must be loaded first. */
+function fontReady() {
+  const { fontFamily, fontSize } = useSettings.getState();
+  return document.fonts
+    .load(`${fontSize}px ${terminalFontFamily(fontFamily)}`)
+    .catch(() => undefined);
+}
+let fontsReady = fontReady();
 
 interface Entry {
   term: Terminal;
@@ -41,13 +57,9 @@ export function setKeyInterceptor(fn: (event: KeyboardEvent) => boolean) {
 
 function create(pane: PaneId): Entry {
   const term = new Terminal({
-    fontFamily: FONT_FAMILY,
-    fontSize: FONT_SIZE,
-    lineHeight: 1.2,
-    cursorBlink: true,
+    ...terminalOptions(),
     scrollback: 10_000,
     allowProposedApi: true,
-    theme: terminalTheme,
   });
   const fit = new FitAddon();
   term.loadAddon(fit);
@@ -181,4 +193,16 @@ useSession.subscribe(({ view }) => {
       entries.delete(pane);
     }
   }
+});
+
+// Settings apply live: theme, font and cursor changes reach every open terminal.
+useSettings.subscribe(() => {
+  fontsReady = fontReady();
+  void fontsReady.then(() => {
+    const options = terminalOptions();
+    for (const [pane, entry] of entries) {
+      Object.assign(entry.term.options, options);
+      refit(pane, entry);
+    }
+  });
 });

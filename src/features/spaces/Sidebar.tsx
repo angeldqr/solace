@@ -1,4 +1,4 @@
-import { Plus, X } from "lucide-react";
+import { Plus, Settings, X } from "lucide-react";
 import type { ReactNode } from "react";
 import { t } from "../../shared/i18n";
 import { api, type Space } from "../../shared/ipc";
@@ -6,6 +6,7 @@ import { useSession } from "../../shared/session";
 import { IconButton } from "../../shared/ui/IconButton";
 import { AgentsList } from "../agents/AgentsList";
 import { openFolder } from "../commands/commands";
+import { openSettings } from "../settings/dialog";
 
 const HUES = [264, 160, 30, 330, 200, 95];
 
@@ -35,9 +36,19 @@ export function Sidebar() {
           <p className="px-2 text-2xs text-fg-subtle">{t("noSpaces")}</p>
         )}
       </nav>
-      <div className="mt-auto border-line border-t pb-4">
+      <div className="mt-auto border-line border-t pb-2">
         <SectionHeader title={t("agents")} />
         <AgentsList />
+      </div>
+      <div className="border-line border-t p-2">
+        <button
+          type="button"
+          onClick={openSettings}
+          className="flex h-8 w-full items-center gap-2.5 rounded-md px-2 text-fg-muted transition-colors duration-150 hover:bg-hover hover:text-fg"
+        >
+          <Settings aria-hidden className="size-4" />
+          {t("settings")}
+        </button>
       </div>
     </aside>
   );
@@ -56,7 +67,7 @@ function SpaceRow({ space, active, branch }: { space: Space; active: boolean; br
   return (
     <div
       className={`group relative flex h-8 items-center rounded-md transition-colors duration-150 ${
-        active ? "bg-white/[0.08] text-fg" : "text-fg-muted hover:bg-hover hover:text-fg"
+        active ? "bg-selected text-fg" : "text-fg-muted hover:bg-hover hover:text-fg"
       }`}
     >
       <button

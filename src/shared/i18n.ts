@@ -43,6 +43,32 @@ const en = {
   back: "Back",
   noTextDiff: "No text changes to show (binary file or mode change).",
   diffTruncated: "Diff truncated. Open the file to see the rest.",
+  settings: "Settings",
+  appearance: "Appearance",
+  theme: "Theme",
+  importVsCode: "Import a VS Code theme",
+  importVsCodeHint:
+    "Paste the theme's JSON file. Missing colours come from the closest built-in theme.",
+  import: "Import",
+  themeImported: "Imported {name}.",
+  terminalSection: "Terminal",
+  fontFamily: "Font",
+  otherFont: "Other…",
+  fontSize: "Font size",
+  lineHeight: "Line height",
+  cursorStyle: "Cursor",
+  cursorBlock: "Block",
+  cursorBar: "Bar",
+  cursorUnderline: "Underline",
+  cursorBlink: "Blinking cursor",
+  shell: "Shell",
+  shellForNewTerminals: "Shell for new terminals",
+  shellDefault: "System default",
+  language: "Language",
+  interfaceLanguage: "Interface language",
+  languageAuto: "Same as the system",
+  about: "About",
+  updateReady: "version {version} ready, restart to update",
 };
 
 type Messages = typeof en;
@@ -94,9 +120,46 @@ const es: Messages = {
   back: "Volver",
   noTextDiff: "No hay cambios de texto que mostrar (archivo binario o cambio de permisos).",
   diffTruncated: "Diff recortado. Abre el archivo para ver el resto.",
+  settings: "Ajustes",
+  appearance: "Apariencia",
+  theme: "Tema",
+  importVsCode: "Importar un tema de VS Code",
+  importVsCodeHint:
+    "Pega el JSON del tema. Los colores que falten se toman del tema incluido más parecido.",
+  import: "Importar",
+  themeImported: "Se importó {name}.",
+  terminalSection: "Terminal",
+  fontFamily: "Fuente",
+  otherFont: "Otra…",
+  fontSize: "Tamaño de fuente",
+  lineHeight: "Interlineado",
+  cursorStyle: "Cursor",
+  cursorBlock: "Bloque",
+  cursorBar: "Barra",
+  cursorUnderline: "Subrayado",
+  cursorBlink: "Cursor parpadeante",
+  shell: "Shell",
+  shellForNewTerminals: "Shell para terminales nuevas",
+  shellDefault: "El del sistema",
+  language: "Idioma",
+  interfaceLanguage: "Idioma de la interfaz",
+  languageAuto: "El del sistema",
+  about: "Acerca de",
+  updateReady: "versión {version} lista, reinicia para actualizar",
 };
 
-export const locale = navigator.language.toLowerCase().startsWith("es") ? "es" : "en";
+/** The language picked in settings, else the system's. Changing it reloads the page. */
+function pickLocale(): "en" | "es" {
+  try {
+    const { language } = JSON.parse(localStorage.getItem("solace.settings") ?? "{}");
+    if (language === "en" || language === "es") return language;
+  } catch {
+    // Unreadable settings: fall back to the system language.
+  }
+  return navigator.language.toLowerCase().startsWith("es") ? "es" : "en";
+}
+
+export const locale = pickLocale();
 const messages = locale === "es" ? es : en;
 
 export function t(key: MessageKey, vars: Record<string, string | number> = {}) {

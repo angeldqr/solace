@@ -11,6 +11,7 @@ import {
 } from "../features/commands/commands";
 import { togglePanel, usePanel } from "../features/files/panel";
 import { RightPanel } from "../features/files/RightPanel";
+import { SettingsDialog } from "../features/settings/SettingsDialog";
 import { Sidebar } from "../features/spaces/Sidebar";
 import { PaneTree } from "../features/terminals/PaneTree";
 import { setKeyInterceptor } from "../features/terminals/registry";
@@ -82,6 +83,7 @@ export function App() {
       </div>
       <StatusBar />
       <CommandPalette />
+      <SettingsDialog />
     </div>
   );
 }
@@ -97,7 +99,7 @@ function PanelToggles() {
         aria-pressed={active}
         onClick={() => togglePanel(which)}
         className={`flex h-7 items-center gap-1.5 rounded-md px-2 text-xs transition-colors duration-150 [&>svg]:size-3.5 ${
-          active ? "bg-white/[0.08] text-fg" : "text-fg-muted hover:bg-hover hover:text-fg"
+          active ? "bg-selected text-fg" : "text-fg-muted hover:bg-hover hover:text-fg"
         }`}
       >
         {icon}
@@ -159,11 +161,11 @@ function EmptyState(props: {
       <button
         type="button"
         onClick={() => void props.onAction()}
-        className="flex h-8 items-center gap-2 rounded-md bg-primary px-3 font-medium text-white transition-[filter] duration-150 hover:brightness-110 [&>svg]:size-3.5"
+        className="flex h-8 items-center gap-2 rounded-md bg-primary px-3 font-medium text-on-primary transition-[filter] duration-150 hover:brightness-110 [&>svg]:size-3.5"
       >
         {props.icon}
         {props.action}
-        <kbd className="ml-1 font-sans text-2xs text-white/60">{props.keys}</kbd>
+        <kbd className="ml-1 font-sans text-2xs text-on-primary/60">{props.keys}</kbd>
       </button>
     </div>
   );

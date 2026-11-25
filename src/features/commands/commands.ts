@@ -5,6 +5,7 @@ import { api, type PaneId } from "../../shared/ipc";
 import { matches } from "../../shared/keys";
 import { current } from "../../shared/session";
 import { togglePanel } from "../files/panel";
+import { openSettings } from "../settings/dialog";
 import { focusTerminal } from "../terminals/registry";
 
 export interface Command {
@@ -86,6 +87,7 @@ export const commands: Command[] = [
     keys: "Ctrl+Shift+G",
     run: () => togglePanel("changes"),
   },
+  { id: "settings", title: "settings", keys: "Ctrl+,", run: openSettings },
   {
     id: "close-space",
     title: "closeSpace",

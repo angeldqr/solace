@@ -44,6 +44,11 @@ export interface Change {
   deletions: number | null;
 }
 
+export interface Shell {
+  name: string;
+  path: string;
+}
+
 /** Typed wrappers over the Rust commands in src-tauri/src/commands.rs. */
 export const api = {
   sessionGet: () => invoke<SessionView>("session_get"),
@@ -69,4 +74,7 @@ export const api = {
   gitDiff: (space: SpaceId, path: string, untracked: boolean) =>
     invoke<string>("git_diff", { space, path, untracked }),
   fileOpen: (space: SpaceId, path: string) => invoke("file_open", { space, path }),
+  shellsList: () => invoke<Shell[]>("shells_list"),
+  settingsGet: () => invoke<{ shell: string | null }>("settings_get"),
+  shellSet: (path: string | null) => invoke("shell_set", { path }),
 };

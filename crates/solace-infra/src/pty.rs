@@ -70,11 +70,62 @@ pub struct Pty {
     pid: Option<u32>,
 }
 
+/// What to start and where.
+pub struct Launch<'a> {
+    pub cwd: &'a Path,
+    pub env: &'a [(&'a str, String)],
+    /// Prepended to PATH (where the `solace` CLI lives).
+    pub bin_dir: Option<&'a Path>,
+    /// The shell the user picked; the platform default when `None` or no longer installed.
+    pub shell: Option<&'a Path>,
+}
+
+/// A shell the user can pick for new terminals.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct Shell {
+    pub name: &'static str,
+    pub path: PathBuf,
+}
+
+/// Shells installed on this machine, the default first.
+pub fn available_shells() -> Vec<Shell> {
+    let mut shells = Vec::new();
+    let mut add = |name, path: Option<PathBuf>| {
+        if let Some(path) = path.filter(|p| p.is_file())
+            && !shells.iter().any(|s: &Shell| s.path == path)
+        {
+            shells.push(Shell { name, path });
+        }
+    };
+    if cfg!(windows) {
+        add("PowerShell 7", which::which("pwsh").ok());
+        add("Windows PowerShell", which::which("powershell").ok());
+        add("Command Prompt", which::which("cmd").ok());
+        // Git's own bash, not System32's bash.exe (which starts WSL).
+        // git.exe lives in Git\cmd or Git\mingw64\bin depending on how PATH was set up. The
+        // install root is the folder with git-bash.exe, so a stray ~\bin\bash.exe isn't taken
+        // for it.
+        let git_bash = which::which("git").ok().and_then(|git| {
+            git.ancestors()
+                .skip(1)
+                .take(4)
+                .find(|dir| dir.join("git-bash.exe").is_file())
+                .map(|root| root.join("bin").join("bash.exe"))
+        });
+        add("Git Bash", git_bash);
+        add("WSL", which::which("wsl").ok());
+    } else {
+        add("Default", std::env::var_os("SHELL").map(PathBuf::from));
+        for name in ["bash", "zsh", "fish"] {
+            add(name, which::which(name).ok());
+        }
+    }
+    shells
+}
+
 impl Pty {
     pub fn spawn(
-        cwd: &Path,
-        env: &[(&str, String)],
-        bin_dir: Option<&Path>,
+        launch: &Launch,
         cols: u16,
         rows: u16,
         // None: nobody is watching yet (a pane an agent opened); see the flusher.
@@ -83,12 +134,14 @@ impl Pty {
     ) -> Result<Pty, PtyError> {
         let pair = native_pty_system().openpty(size(cols, rows))?;
 
-        let shell = default_shell();
+        let shell = launch
+            .shell
+            .filter(|s| s.is_file())
+            .map(Path::to_path_buf)
+            .unwrap_or_else(default_shell);
         let mut cmd = CommandBuilder::new(&shell);
-        if is_powershell(&shell) {
-            cmd.arg("-NoLogo");
-        }
-        cmd.cwd(cwd);
+        cmd.args(shell_args(&shell));
+        cmd.cwd(launch.cwd);
         // The base env is re-read from the registry on Windows (so newly installed tools show up);
         // malformed entries there make CreateProcessW fail with error 87.
         let bad: Vec<String> = cmd
@@ -99,7 +152,7 @@ impl Pty {
         for key in bad {
             cmd.env_remove(key);
         }
-        if let Some(dir) = bin_dir {
+        if let Some(dir) = launch.bin_dir {
             // Puts the `solace` CLI on PATH for shells and the agents they start.
             let path = cmd.get_env("PATH").map(std::env::split_paths);
             let paths = std::iter::once(dir.to_path_buf()).chain(path.into_iter().flatten());
@@ -109,7 +162,7 @@ impl Pty {
         }
         cmd.env("TERM", "xterm-256color");
         cmd.env("COLORTERM", "truecolor");
-        for (key, value) in env {
+        for (key, value) in launch.env {
             cmd.env(key, value);
         }
 
@@ -280,12 +333,12 @@ impl Pty {
     /// modes (bracketed paste, mouse, cursor keys) there first.
     pub fn set_output(&self, mut output: Output) {
         let mut current = self.output.lock().unwrap();
-        output(
-            lock_screen(&self.screen)
-                .screen()
-                .state_formatted()
-                .into_bytes(),
-        );
+        let screen = lock_screen(&self.screen);
+        // The title too: it was set once, long before this new UI started listening.
+        let title = screen.callbacks().title.replace(['\x07', '\x1b'], "");
+        let repaint = format!("\x1b]0;{title}\x07{}", screen.screen().state_formatted());
+        drop(screen);
+        output(repaint.into_bytes());
         *current = Some(output);
     }
 
@@ -353,11 +406,18 @@ fn default_shell() -> PathBuf {
     }
 }
 
-fn is_powershell(shell: &Path) -> bool {
-    shell
+fn shell_args(shell: &Path) -> &'static [&'static str] {
+    let stem = shell
         .file_stem()
         .and_then(|s| s.to_str())
-        .is_some_and(|s| s.eq_ignore_ascii_case("pwsh") || s.eq_ignore_ascii_case("powershell"))
+        .unwrap_or_default()
+        .to_ascii_lowercase();
+    match stem.as_str() {
+        "pwsh" | "powershell" => &["-NoLogo"],
+        // A login shell reads the user's profile, as Git Bash's own window does.
+        "bash" => &["--login", "-i"],
+        _ => &[],
+    }
 }
 
 /// Windows keeps per-drive cwd entries like `=C:`, so a leading `=` is valid.
@@ -373,6 +433,19 @@ mod tests {
     use super::*;
 
     #[test]
+    fn finds_installed_shells_with_the_right_arguments() {
+        let shells = available_shells();
+        assert!(!shells.is_empty());
+        assert!(shells.iter().all(|s| s.path.is_file()));
+        assert_eq!(shell_args(Path::new("C:/x/pwsh.exe")), ["-NoLogo"]);
+        assert_eq!(
+            shell_args(Path::new("C:/Git/bin/bash.exe")),
+            ["--login", "-i"]
+        );
+        assert!(shell_args(Path::new("C:/Windows/System32/cmd.exe")).is_empty());
+    }
+
+    #[test]
     fn rejects_env_entries_that_break_process_creation() {
         assert!(is_valid_env("PATH", "C:\\bin"));
         assert!(is_valid_env("=C:", "C:\\Users"));
@@ -385,7 +458,14 @@ mod tests {
     #[test]
     fn unwatched_shell_still_starts_and_runs_commands() {
         // No sink: Solace itself must answer ConPTY's startup cursor query.
-        let pty = Pty::spawn(&std::env::temp_dir(), &[], None, 80, 24, None, |_| {}).unwrap();
+        let cwd = std::env::temp_dir();
+        let launch = Launch {
+            cwd: &cwd,
+            env: &[],
+            bin_dir: None,
+            shell: None,
+        };
+        let pty = Pty::spawn(&launch, 80, 24, None, |_| {}).unwrap();
         pty.write(b"echo headless-ok\r".to_vec());
         let deadline = Instant::now() + Duration::from_secs(20);
         while !pty
@@ -408,10 +488,16 @@ mod tests {
     fn spawned_shell_output_reaches_the_sink_and_exit_is_reported() {
         let (tx, rx) = mpsc::channel();
         let (exit_tx, exit_rx) = mpsc::channel();
+        let cwd = std::env::temp_dir();
+        let env = [("SOLACE_TEST", "marker-42".to_string())];
+        let launch = Launch {
+            cwd: &cwd,
+            env: &env,
+            bin_dir: None,
+            shell: None,
+        };
         let pty = Pty::spawn(
-            &std::env::temp_dir(),
-            &[("SOLACE_TEST", "marker-42".into())],
-            None,
+            &launch,
             80,
             24,
             Some(Box::new(move |bytes| {

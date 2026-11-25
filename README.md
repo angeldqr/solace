@@ -4,6 +4,15 @@ A desktop terminal for running and orchestrating AI coding agents: Claude Code, 
 
 > Status: early development (v0.0.x). Not ready for daily use yet.
 
+## Features
+
+- **Terminals** with tabs and resizable splits, grouped into spaces (one per project folder). Pick PowerShell, cmd, Git Bash or WSL as the shell.
+- **Agent awareness**: Claude Code, Codex, Gemini CLI, Qwen Code, Kimi Code, OpenCode, Copilot, Cursor Agent and Amp are recognized in any pane, with their state (working, needs you, done, idle).
+- **Orchestration**: inside Solace, the `solace` CLI lets an agent open panes, start other agents, prompt them and read their answers (`solace agent start reviewer --kind codex`, `solace agent prompt reviewer "..." --wait`). Run `solace skill install` to teach Claude Code how.
+- **Files and Changes** panels with a lazy file tree, git status and diffs, refreshed live.
+- **Themes**: five built-in themes (one light), VS Code theme import, terminal font and cursor settings, English and Spanish.
+- **Updates** download in the background and apply when you choose to restart.
+
 ## Stack
 
 - **Core:** Rust. PTYs, agent detection and orchestration.

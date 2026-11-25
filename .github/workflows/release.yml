@@ -26,6 +26,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - run: pnpm install --frozen-lockfile
       - run: pnpm lint:ci
+      - run: pnpm test
       - run: pnpm build
       # tauri-build checks that the bundled CLI exists before compiling the app.
       - run: node scripts/build-cli.mjs

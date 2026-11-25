@@ -2,6 +2,7 @@ mod agents;
 mod commands;
 mod files;
 mod orchestration;
+mod settings;
 
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -22,6 +23,8 @@ pub struct AppState {
     watchers: files::Watchers,
     file_events: std::sync::mpsc::Sender<solace_core::spaces::SpaceId>,
     file: PathBuf,
+    settings: settings::AppSettings,
+    settings_file: PathBuf,
 }
 
 /// Where the `solace` CLI reaches this app; fixed for the life of the process.
@@ -57,7 +60,10 @@ pub fn run() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
         .setup(|app| {
-            let file = app.path().app_data_dir()?.join("session.json");
+            let data = app.path().app_data_dir()?;
+            let file = data.join("session.json");
+            let settings_file = data.join("settings.json");
+            let settings = persist::load(&settings_file)?.unwrap_or_default();
             // An unreadable session aborts startup rather than being replaced by an empty one.
             let session = persist::load(&file)?.unwrap_or_default();
             app.manage(Mutex::new(AppState {
@@ -68,6 +74,8 @@ pub fn run() {
                 watchers: Default::default(),
                 file_events: files::spawn_relay(app.handle().clone()),
                 file,
+                settings,
+                settings_file,
             }));
             files::sync_watchers(&app.state::<Shared>().lock().unwrap());
             let handle = app.handle().clone();
@@ -102,6 +110,9 @@ pub fn run() {
             files::git_status,
             files::git_diff,
             files::file_open,
+            settings::shells_list,
+            settings::settings_get,
+            settings::shell_set,
         ])
         .build(tauri::generate_context!())
         .expect("error while building Solace");
