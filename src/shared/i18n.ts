@@ -29,6 +29,8 @@ const en = {
   agentDone: "Done",
   agentWorking: "Working",
   agentIdle: "Idle",
+  restartToUpdate: "Restart to update to {version}",
+  updateHint: "Restarting closes open terminals; your layout is restored afterwards.",
 };
 
 type Messages = typeof en;
@@ -65,6 +67,9 @@ const es: Messages = {
   agentDone: "Terminado",
   agentWorking: "Trabajando",
   agentIdle: "Inactivo",
+  restartToUpdate: "Reiniciar para actualizar a {version}",
+  updateHint:
+    "Al reiniciar se cierran las terminales abiertas; la distribución se restaura después.",
 };
 
 export const locale = navigator.language.toLowerCase().startsWith("es") ? "es" : "en";

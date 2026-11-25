@@ -45,7 +45,17 @@
       "nsis": {
         "installMode": "currentUser"
       }
-    }
+    },
+    "createUpdaterArtifacts": true
   },
-  "mainBinaryName": "Solace"
+  "mainBinaryName": "Solace",
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEEzODE4OUNFMzY5QjI1QUQKUldTdEpaczJ6b21Cbzk1L05EWms2SDdKRGkvK0JDL2MxL2RtVDZNTlQ5ZWgxTUVzSXQ1ck1tUkgK",
+      "endpoints": ["https://github.com/angeldqr/solace/releases/latest/download/latest.json"],
+      "windows": {
+        "installMode": "passive"
+      }
+    }
+  }
 }

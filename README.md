@@ -31,7 +31,9 @@ pnpm lint
 
 ## Releases
 
-Pushing a `vX.Y.Z` tag that matches `version` in `Cargo.toml` builds the Windows installers (`.exe` and `.msi`) and attaches them to a draft GitHub release.
+Pushing a `vX.Y.Z` tag that matches `version` in `Cargo.toml` builds the Windows installers (`.exe` and `.msi`) and signed update bundles, and attaches them to a draft GitHub release. Publishing the draft makes installed copies download the update and offer a restart.
+
+Signing needs the repository secrets `TAURI_SIGNING_PRIVATE_KEY` and `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`. The public key lives in `src-tauri/tauri.conf.json`; losing the private key means installed copies can no longer update.
 
 ## License
 
