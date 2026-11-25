@@ -4135,7 +4135,7 @@ dependencies = [
 
 [[package]]
 name = "solace-app"
-version = "0.0.5"
+version = "0.0.6"
 dependencies = [
  "notify",
  "serde",
@@ -4154,7 +4154,7 @@ dependencies = [
 
 [[package]]
 name = "solace-cli"
-version = "0.0.5"
+version = "0.0.6"
 dependencies = [
  "clap",
  "interprocess",
@@ -4164,7 +4164,7 @@ dependencies = [
 
 [[package]]
 name = "solace-core"
-version = "0.0.5"
+version = "0.0.6"
 dependencies = [
  "regex",
  "serde",
@@ -4174,7 +4174,7 @@ dependencies = [
 
 [[package]]
 name = "solace-infra"
-version = "0.0.5"
+version = "0.0.6"
 dependencies = [
  "ignore",
  "interprocess",
