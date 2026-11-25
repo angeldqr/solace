@@ -8,6 +8,7 @@ fn main() {
             .set("FileDescription", "Solace command-line interface")
             .set("CompanyName", "Solace")
             .set("LegalCopyright", "Apache-2.0");
-        res.compile().expect("failed to embed the Windows version resource");
+        res.compile()
+            .expect("failed to embed the Windows version resource");
     }
 }
