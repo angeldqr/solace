@@ -14,9 +14,8 @@ jobs:
     env:
       # Signing happens only once SignPath is set up (docs/code-signing.md).
       SIGN: ${{ vars.SIGNPATH_ORGANIZATION_ID != '' }}
-      # Signs the update bundles; installed apps reject updates without a matching signature.
-      TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-      TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+    # The updater key is given only to the two steps that sign updates, never to install, test or
+    # build steps where a compromised dependency could read it.
     steps:
       - uses: actions/checkout@v7
       - name: Tag must match the workspace version
@@ -41,12 +40,14 @@ jobs:
       # Never ship a tag whose tests fail or whose Cargo.lock is stale.
       - run: cargo test --locked --workspace
 
-      # Programs first, so the installers carry signed executables.
       - run: pnpm tauri build --no-bundle
-      - name: Collect programs to sign
+      # The CLI is signed before bundling so the installers carry the signed copy. Solace.exe is
+      # not: `tauri bundle` rewrites a marker inside it per installer type, which would void a
+      # signature made before. The installers themselves are signed below.
+      - name: Collect the CLI to sign
         if: env.SIGN == 'true'
         shell: bash
-        run: mkdir -p to-sign/programs && cp target/release/Solace.exe src-tauri/binaries/solace.exe to-sign/programs/
+        run: mkdir -p to-sign/programs && cp src-tauri/binaries/solace.exe to-sign/programs/
       - uses: actions/upload-artifact@v7
         id: programs
         if: env.SIGN == 'true'
@@ -65,14 +66,17 @@ jobs:
           parameters: |
             version: "${{ steps.version.outputs.version }}"
           output-artifact-directory: signed/programs
-      - name: Use the signed programs
+          # Each request waits for the owner's manual approval in SignPath.
+          wait-for-completion-timeout-in-seconds: 3600
+      - name: Use the signed CLI
         if: env.SIGN == 'true'
         shell: bash
-        run: |
-          cp signed/programs/Solace.exe target/release/Solace.exe
-          cp signed/programs/solace.exe src-tauri/binaries/solace.exe
+        run: cp signed/programs/solace.exe src-tauri/binaries/solace.exe
 
       - run: pnpm tauri bundle
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
       - name: Collect installers to sign
         if: env.SIGN == 'true'
         shell: bash
@@ -95,9 +99,13 @@ jobs:
           artifact-configuration-slug: installers
           github-artifact-id: ${{ steps.installers.outputs.artifact-id }}
           output-artifact-directory: signed/installers
+          wait-for-completion-timeout-in-seconds: 3600
       - name: Use the signed installers and re-sign them for the updater
         if: env.SIGN == 'true'
         shell: bash
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         run: |
           cp signed/installers/*-setup.exe target/release/bundle/nsis/
           cp signed/installers/*.msi target/release/bundle/msi/
@@ -113,6 +121,10 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          # A draft left by a failed earlier run is replaced; a published release never is.
+          if [ "$(gh release view "${GITHUB_REF_NAME}" --json isDraft --jq .isDraft 2>/dev/null)" = "true" ]; then
+            gh release delete "${GITHUB_REF_NAME}" --yes
+          fi
           gh release create "${GITHUB_REF_NAME}" --draft --title "Solace ${GITHUB_REF_NAME}" \
             --notes "Download \`Solace_*_x64-setup.exe\` (recommended) or the \`.msi\` installer below." \
             target/release/bundle/nsis/*-setup.exe target/release/bundle/nsis/*-setup.exe.sig \

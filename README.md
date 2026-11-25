@@ -55,7 +55,7 @@ Setup details: [docs/code-signing.md](docs/code-signing.md).
 
 ## Privacy
 
-Solace does not collect or send any usage data. The only network requests it makes on its own are to GitHub Releases, to check for and download updates. You can turn this off in **Settings > Updates**. Agents and programs you run in its terminals follow their own privacy policies.
+Solace does not collect or send any usage data. The only network requests it makes on its own are to GitHub Releases, to check for and download updates. You can turn this off in **Settings > About**. Agents and programs you run in its terminals follow their own privacy policies.
 
 ## License
 
