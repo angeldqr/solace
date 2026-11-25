@@ -32,3 +32,15 @@ pub fn toasts_enabled() -> bool {
         true
     }
 }
+
+/// Whether the window with this handle is the one the user is using (foreground, not minimized).
+/// Tauri's `is_focused` can't tell: keyboard focus sits in the WebView child window.
+#[cfg(windows)]
+pub fn is_foreground(hwnd: isize) -> bool {
+    use windows_sys::Win32::UI::WindowsAndMessaging::{GetForegroundWindow, IsIconic};
+    // SAFETY: plain queries on a window handle; a stale handle just compares unequal.
+    unsafe {
+        let window = hwnd as windows_sys::Win32::Foundation::HWND;
+        GetForegroundWindow() == window && IsIconic(window) == 0
+    }
+}

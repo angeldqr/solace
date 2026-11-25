@@ -72,7 +72,7 @@ const en = {
   notifications: "Notifications",
   notifyAgents: "Notify me when an agent I'm not watching needs me or finishes",
   systemToastsOff:
-    "Windows notifications are turned off (Settings > System > Notifications), so Solace flashes its taskbar button instead.",
+    "Windows notifications are turned off (Settings > System > Notifications). Solace will still flash its taskbar button when an agent needs you.",
 };
 
 type Messages = typeof en;
@@ -153,7 +153,7 @@ const es: Messages = {
   notifications: "Notificaciones",
   notifyAgents: "Avisarme cuando un agente que no estoy mirando me necesite o termine",
   systemToastsOff:
-    "Las notificaciones de Windows están desactivadas (Configuración > Sistema > Notificaciones), así que Solace hará parpadear su botón en la barra de tareas.",
+    "Las notificaciones de Windows están desactivadas (Configuración > Sistema > Notificaciones). Aun así, Solace hará parpadear su botón en la barra de tareas cuando un agente te necesite.",
 };
 
 /** The language picked in settings, else the system's. Changing it reloads the page. */

@@ -96,6 +96,11 @@ pub fn identify(exe: &str, args: &[String]) -> Option<&'static AgentDef> {
 }
 
 impl AgentDef {
+    /// Whether its screen can be read; without rules only output activity is known.
+    pub fn has_rules(&self) -> bool {
+        !self.rules.is_empty()
+    }
+
     /// The command that starts this agent in a shell.
     pub fn command(&self) -> Option<&str> {
         self.executables.first().map(String::as_str)
