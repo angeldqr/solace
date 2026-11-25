@@ -5,15 +5,17 @@ import "./index.css";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { App } from "./app/App";
+import { startFileEvents } from "./features/files/panel";
 import { startUpdates } from "./features/updates/updates";
 import { startAgents } from "./shared/agents";
 import { locale } from "./shared/i18n";
-import { startSession } from "./shared/session";
+import { current, startSession } from "./shared/session";
 
 document.documentElement.lang = locale;
 void startSession();
 void startAgents();
 startUpdates();
+void startFileEvents(() => current().space?.id);
 
 const root = document.getElementById("root");
 if (!root) throw new Error("#root element missing from index.html");

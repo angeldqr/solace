@@ -7,7 +7,9 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
+ignore = "0.4"
 interprocess = "2.4"
+notify = "9"
 portable-pty = "0.9"
 solace-core = { path = "../solace-core" }
 sysinfo = { version = "0.40", default-features = false, features = ["system"] }

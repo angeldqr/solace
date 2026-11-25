@@ -4,6 +4,7 @@ import type { MessageKey } from "../../shared/i18n";
 import { api, type PaneId } from "../../shared/ipc";
 import { matches } from "../../shared/keys";
 import { current } from "../../shared/session";
+import { togglePanel } from "../files/panel";
 import { focusTerminal } from "../terminals/registry";
 
 export interface Command {
@@ -73,6 +74,18 @@ export const commands: Command[] = [
   },
   { id: "next-tab", title: "nextTab", keys: "Ctrl+Tab", run: () => cycleTab(1) },
   { id: "previous-tab", title: "previousTab", keys: "Ctrl+Shift+Tab", run: () => cycleTab(-1) },
+  {
+    id: "toggle-files",
+    title: "toggleFiles",
+    keys: "Ctrl+Shift+B",
+    run: () => togglePanel("files"),
+  },
+  {
+    id: "toggle-changes",
+    title: "toggleChanges",
+    keys: "Ctrl+Shift+G",
+    run: () => togglePanel("changes"),
+  },
   {
     id: "close-space",
     title: "closeSpace",

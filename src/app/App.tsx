@@ -1,4 +1,4 @@
-import { FolderOpen, SquareTerminal } from "lucide-react";
+import { FolderOpen, GitCompare, PanelRight, SquareTerminal } from "lucide-react";
 import { useEffect } from "react";
 import { CommandPalette } from "../features/commands/CommandPalette";
 import {
@@ -9,6 +9,8 @@ import {
   runCommand,
   togglePalette,
 } from "../features/commands/commands";
+import { togglePanel, usePanel } from "../features/files/panel";
+import { RightPanel } from "../features/files/RightPanel";
 import { Sidebar } from "../features/spaces/Sidebar";
 import { PaneTree } from "../features/terminals/PaneTree";
 import { setKeyInterceptor } from "../features/terminals/registry";
@@ -69,13 +71,44 @@ export function App() {
           <header data-tauri-drag-region className="flex h-11 shrink-0 items-center">
             {space && <TabBar space={space} />}
             <div data-tauri-drag-region className="h-full flex-1" />
+            {space && <PanelToggles />}
             <WindowControls />
           </header>
-          <main className="min-h-0 flex-1 px-2 pb-2">{view && <Workspace space={space} />}</main>
+          <div className="flex min-h-0 flex-1">
+            <main className="min-w-0 flex-1 px-2 pb-2">{view && <Workspace space={space} />}</main>
+            {space && <RightPanel space={space} />}
+          </div>
         </div>
       </div>
       <StatusBar />
       <CommandPalette />
+    </div>
+  );
+}
+
+/** Herdr-style switches for the right panel, next to the window controls. */
+function PanelToggles() {
+  const { open, tab } = usePanel();
+  const button = (which: "files" | "changes", label: string, icon: React.ReactNode) => {
+    const active = open && tab === which;
+    return (
+      <button
+        type="button"
+        aria-pressed={active}
+        onClick={() => togglePanel(which)}
+        className={`flex h-7 items-center gap-1.5 rounded-md px-2 text-xs transition-colors duration-150 [&>svg]:size-3.5 ${
+          active ? "bg-white/[0.08] text-fg" : "text-fg-muted hover:bg-hover hover:text-fg"
+        }`}
+      >
+        {icon}
+        {label}
+      </button>
+    );
+  };
+  return (
+    <div className="mr-2 flex items-center gap-1">
+      {button("files", t("files"), <PanelRight aria-hidden />)}
+      {button("changes", t("changes"), <GitCompare aria-hidden />)}
     </div>
   );
 }

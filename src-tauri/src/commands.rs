@@ -23,7 +23,7 @@ pub struct SessionView {
     branches: HashMap<SpaceId, String>,
 }
 
-fn view(session: &Session) -> SessionView {
+pub(crate) fn view(session: &Session) -> SessionView {
     let branches = session
         .spaces
         .iter()
@@ -37,6 +37,7 @@ fn view(session: &Session) -> SessionView {
 
 /// Persists and broadcasts the session after every change.
 pub(crate) fn commit(app: &AppHandle, state: &AppState) {
+    crate::files::sync_watchers(state);
     if let Err(err) = persist::save(&state.file, &state.session) {
         eprintln!("could not save session: {err}");
     }

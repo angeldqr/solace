@@ -31,6 +31,18 @@ const en = {
   agentIdle: "Idle",
   restartToUpdate: "Restart to update to {version}",
   updateHint: "Restarting closes open terminals; your layout is restored afterwards.",
+  files: "Files",
+  changes: "Changes",
+  toggleFiles: "Show or hide files",
+  toggleChanges: "Show or hide changes",
+  emptyFolder: "Empty folder",
+  openFileHint: "Double-click to open",
+  notARepository: "This folder is not a git repository.",
+  noChanges: "No uncommitted changes.",
+  changeCount: "{n} changed files",
+  back: "Back",
+  noTextDiff: "No text changes to show (binary file or mode change).",
+  diffTruncated: "Diff truncated. Open the file to see the rest.",
 };
 
 type Messages = typeof en;
@@ -70,6 +82,18 @@ const es: Messages = {
   restartToUpdate: "Reiniciar para actualizar a {version}",
   updateHint:
     "Al reiniciar se cierran las terminales abiertas; la distribución se restaura después.",
+  files: "Archivos",
+  changes: "Cambios",
+  toggleFiles: "Mostrar u ocultar archivos",
+  toggleChanges: "Mostrar u ocultar cambios",
+  emptyFolder: "Carpeta vacía",
+  openFileHint: "Doble clic para abrir",
+  notARepository: "Esta carpeta no es un repositorio git.",
+  noChanges: "No hay cambios sin confirmar.",
+  changeCount: "{n} archivos con cambios",
+  back: "Volver",
+  noTextDiff: "No hay cambios de texto que mostrar (archivo binario o cambio de permisos).",
+  diffTruncated: "Diff recortado. Abre el archivo para ver el resto.",
 };
 
 export const locale = navigator.language.toLowerCase().startsWith("es") ? "es" : "en";

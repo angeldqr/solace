@@ -1,5 +1,6 @@
 mod agents;
 mod commands;
+mod files;
 mod orchestration;
 
 use std::collections::HashMap;
@@ -18,6 +19,8 @@ pub struct AppState {
     agents: HashMap<PaneId, agents::AgentEntry>,
     /// Names given to agents by `solace agent start`; runtime only.
     names: HashMap<PaneId, String>,
+    watchers: files::Watchers,
+    file_events: std::sync::mpsc::Sender<solace_core::spaces::SpaceId>,
     file: PathBuf,
 }
 
@@ -50,6 +53,7 @@ pub fn run() {
             }
         }))
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
         .setup(|app| {
@@ -61,8 +65,11 @@ pub fn run() {
                 ptys: HashMap::new(),
                 agents: HashMap::new(),
                 names: HashMap::new(),
+                watchers: Default::default(),
+                file_events: files::spawn_relay(app.handle().clone()),
                 file,
             }));
+            files::sync_watchers(&app.state::<Shared>().lock().unwrap());
             let handle = app.handle().clone();
             if let Err(err) = solace_infra::ipc::serve(endpoint(), move |request| {
                 orchestration::handle(&handle, request)
@@ -91,6 +98,10 @@ pub fn run() {
             commands::pty_write,
             commands::pty_resize,
             commands::pty_pause,
+            files::files_list,
+            files::git_status,
+            files::git_diff,
+            files::file_open,
         ])
         .build(tauri::generate_context!())
         .expect("error while building Solace");

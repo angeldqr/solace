@@ -30,6 +30,20 @@ export interface SessionView {
   branches: Record<string, string>;
 }
 
+export interface FileEntry {
+  name: string;
+  dir: boolean;
+  ignored: boolean;
+}
+
+export interface Change {
+  path: string;
+  /** M modified, A added, D deleted, R renamed, U untracked, C copied, T type change. */
+  status: string;
+  additions: number | null;
+  deletions: number | null;
+}
+
 /** Typed wrappers over the Rust commands in src-tauri/src/commands.rs. */
 export const api = {
   sessionGet: () => invoke<SessionView>("session_get"),
@@ -50,4 +64,9 @@ export const api = {
   ptyResize: (pane: PaneId, cols: number, rows: number) =>
     invoke("pty_resize", { pane, cols, rows }),
   ptyPause: (pane: PaneId, paused: boolean) => invoke("pty_pause", { pane, paused }),
+  filesList: (space: SpaceId, path: string) => invoke<FileEntry[]>("files_list", { space, path }),
+  gitStatus: (space: SpaceId) => invoke<Change[] | null>("git_status", { space }),
+  gitDiff: (space: SpaceId, path: string, untracked: boolean) =>
+    invoke<string>("git_diff", { space, path, untracked }),
+  fileOpen: (space: SpaceId, path: string) => invoke("file_open", { space, path }),
 };
