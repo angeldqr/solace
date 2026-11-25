@@ -4,6 +4,7 @@ import { t } from "../../shared/i18n";
 import { api, type Space } from "../../shared/ipc";
 import { useSession } from "../../shared/session";
 import { IconButton } from "../../shared/ui/IconButton";
+import { AgentsList } from "../agents/AgentsList";
 import { openFolder } from "../commands/commands";
 
 const HUES = [264, 160, 30, 330, 200, 95];
@@ -36,7 +37,7 @@ export function Sidebar() {
       </nav>
       <div className="mt-auto border-line border-t pb-4">
         <SectionHeader title={t("agents")} />
-        <p className="px-4 text-2xs text-fg-subtle">{t("agentsEmpty")}</p>
+        <AgentsList />
       </div>
     </aside>
   );

@@ -1,9 +1,12 @@
 import { Columns2, Rows2, SquareTerminal, X } from "lucide-react";
 import { type PointerEvent, useEffect, useRef, useState } from "react";
+import { statusOf, useAgent, useAgents } from "../../shared/agents";
 import { t } from "../../shared/i18n";
 import { api, type Layout, type PaneId, type Space, type Tab } from "../../shared/ipc";
 import { displayTitle, useSession } from "../../shared/session";
+import { AgentIcon } from "../../shared/ui/AgentIcon";
 import { IconButton } from "../../shared/ui/IconButton";
+import { StatusDot } from "../../shared/ui/StatusDot";
 import { focusTerminal, mountTerminal } from "./registry";
 
 interface NodeProps {
@@ -85,7 +88,10 @@ function Split({
 
 function TerminalPane({ space, pane, focused }: { space: Space; pane: PaneId; focused: boolean }) {
   const host = useRef<HTMLDivElement>(null);
-  const title = useSession((s) => s.titles[pane]);
+  const shellTitle = useSession((s) => s.titles[pane]);
+  const agent = useAgent(pane);
+  const done = useAgents((s) => s.done);
+  const title = agent?.name ?? displayTitle(shellTitle, t("terminal"));
 
   useEffect(() => {
     if (host.current) return mountTerminal(pane, host.current);
@@ -97,7 +103,7 @@ function TerminalPane({ space, pane, focused }: { space: Space; pane: PaneId; fo
 
   return (
     <section
-      aria-label={displayTitle(title, t("terminal"))}
+      aria-label={title}
       onPointerDownCapture={() => {
         if (!focused) void api.paneFocus(pane);
       }}
@@ -106,10 +112,13 @@ function TerminalPane({ space, pane, focused }: { space: Space; pane: PaneId; fo
       }`}
     >
       <header className="group flex h-7 shrink-0 items-center gap-2 border-line border-b pr-1 pl-2.5 text-2xs">
-        <SquareTerminal className="size-3.5 shrink-0 text-fg-subtle" aria-hidden />
-        <span className={focused ? "text-fg" : "text-fg-muted"}>
-          {displayTitle(title, t("terminal"))}
-        </span>
+        {agent ? (
+          <AgentIcon agent={agent.agent} />
+        ) : (
+          <SquareTerminal className="size-3.5 shrink-0 text-fg-subtle" aria-hidden />
+        )}
+        <span className={focused ? "text-fg" : "text-fg-muted"}>{title}</span>
+        {agent && <StatusDot status={statusOf(agent, done)} />}
         <span className="truncate text-fg-subtle">{space.root}</span>
         <div className="ml-auto flex opacity-0 transition-opacity duration-150 group-hover:opacity-100 focus-within:opacity-100">
           <IconButton label={t("splitRight")} onClick={() => api.paneSplit(pane, "row")}>

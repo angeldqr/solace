@@ -1,0 +1,148 @@
+# How Solace recognizes each CLI agent and reads its state from the screen.
+#
+# An agent is matched by executable name (without extension) or, for script-based CLIs run by an
+# interpreter such as node, by its package path inside node_modules on the command line.
+# Rules run in order; the first whose `regex` matches (and whose `not` doesn't) sets the state.
+# Regions: "title" (window title set via OSC) or "bottom:N" (last N non-empty screen lines).
+# With no matching rule, recent output means working and silence means idle.
+#
+# Screen patterns adapted from herdr's detection manifests (Apache-2.0, see NOTICE).
+
+[[agent]]
+id = "claude"
+name = "Claude Code"
+executables = ["claude"]
+packages = ["@anthropic-ai/claude-code"]
+
+[[agent.rule]]
+state = "working"
+region = "title"
+regex = '^[\x{2800}-\x{28FF}\x{25D0}-\x{25D3}] '
+
+[[agent.rule]]
+state = "blocked"
+region = "bottom:20"
+regex = '(?is)do you want to [^\n]*\?.*(?:❯|\byes\b)|enter to (?:confirm|select).*esc to cancel|waiting for permission|requests your input'
+# An empty input prompt means Claude is waiting for a new message, not for approval.
+not = '(?m)^\s*❯\s*$'
+
+[[agent.rule]]
+state = "working"
+region = "bottom:12"
+regex = '(?i)esc to interrupt'
+
+[[agent.rule]]
+state = "idle"
+region = "title"
+regex = '^\x{2733} '
+
+[[agent]]
+id = "codex"
+name = "Codex"
+executables = ["codex"]
+packages = ["@openai/codex"]
+
+[[agent.rule]]
+state = "blocked"
+region = "title"
+regex = 'Action Required'
+
+[[agent.rule]]
+state = "working"
+region = "title"
+regex = '(?:^| )[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏](?: |$)'
+
+[[agent.rule]]
+state = "blocked"
+region = "bottom:20"
+regex = '(?i)press enter to confirm or esc to cancel|enter to submit (?:answer|all)|allow command\?|do you trust the contents of this directory\?|\[y/n\]|yes \(y\)'
+
+[[agent.rule]]
+state = "working"
+region = "bottom:20"
+regex = '(?i)\(\d+[hms][^)]*to interrupt\)|esc to interrupt'
+
+[[agent.rule]]
+state = "idle"
+region = "title"
+regex = '\S'
+
+[[agent]]
+id = "gemini"
+name = "Gemini CLI"
+executables = ["gemini"]
+packages = ["@google/gemini-cli"]
+
+[[agent.rule]]
+state = "blocked"
+region = "bottom:30"
+regex = '(?i)│ apply this change|│ allow execution|waiting for user confirmation|│ do you want to proceed'
+
+[[agent.rule]]
+state = "working"
+region = "bottom:15"
+regex = '(?i)esc to cancel'
+
+[[agent]]
+id = "qwen"
+name = "Qwen Code"
+executables = ["qwen"]
+packages = ["@qwen-code/qwen-code"]
+
+[[agent.rule]]
+state = "blocked"
+region = "bottom:30"
+regex = '(?i)│ apply this change|│ allow execution|waiting for user confirmation|│ do you want to proceed'
+
+[[agent.rule]]
+state = "working"
+region = "bottom:15"
+regex = '(?i)esc to cancel'
+
+[[agent]]
+id = "kimi"
+name = "Kimi Code"
+executables = ["kimi", "kimi-code"]
+
+[[agent.rule]]
+state = "blocked"
+region = "bottom:30"
+regex = '(?is)(?:run this command\?|write this file\?|apply these edits\?|stop this task\?|ready to build with this plan\?|requesting approval).*(?:↵ confirm|choose)'
+
+[[agent.rule]]
+state = "working"
+region = "bottom:30"
+regex = '(?mi)^\s*(?:🌕|🌖|🌗|🌘|🌑|🌒|🌓|🌔)\s*$|^\s*[\x{2800}-\x{28FF}]+\s*(?:thinking|working|using )'
+
+[[agent]]
+id = "opencode"
+name = "OpenCode"
+executables = ["opencode"]
+packages = ["opencode-ai"]
+
+[[agent.rule]]
+state = "blocked"
+region = "bottom:30"
+regex = '△ Permission required'
+
+[[agent.rule]]
+state = "working"
+region = "bottom:30"
+regex = '(?i)esc (?:again to )?interrupt|ctrl\+c to interrupt|(?:■|⬝){4,}'
+
+[[agent]]
+id = "copilot"
+name = "GitHub Copilot"
+executables = ["copilot"]
+packages = ["@github/copilot"]
+
+[[agent]]
+id = "cursor"
+name = "Cursor Agent"
+executables = ["cursor-agent"]
+
+[[agent]]
+id = "amp"
+name = "Amp"
+executables = ["amp"]
+packages = ["@sourcegraph/amp"]

@@ -1,19 +1,57 @@
 use std::error::Error;
 use std::io::{Read, Write};
+use std::panic::{self, AssertUnwindSafe};
 use std::path::{Path, PathBuf};
 use std::sync::mpsc;
-use std::sync::{Arc, Condvar, Mutex};
+use std::sync::{Arc, Condvar, Mutex, MutexGuard, PoisonError};
 use std::thread;
 use std::time::{Duration, Instant};
 
+use std::num::NonZeroU16;
+
 use portable_pty::{ChildKiller, CommandBuilder, MasterPty, PtySize, native_pty_system};
 
+/// A silence this long ends a burst of output.
+const QUIET: Duration = Duration::from_millis(1500);
 /// Output is coalesced for up to ~one frame, or this many bytes, per message to the UI.
 const FLUSH_AFTER: Duration = Duration::from_millis(4);
 const FLUSH_BYTES: usize = 64 * 1024;
 
 pub type Output = Box<dyn FnMut(Vec<u8>) + Send>;
 pub type PtyError = Box<dyn Error + Send + Sync>;
+
+/// A headless copy of what the terminal shows, kept in Rust so agents' state can be read and a
+/// reloaded UI can be repainted without asking the frontend.
+type Screen = vt100::Parser<TitleTracker>;
+
+#[derive(Default)]
+struct TitleTracker {
+    title: String,
+}
+
+impl vt100::Callbacks for TitleTracker {
+    fn set_window_title(&mut self, _: &mut vt100::Screen, title: &[u8]) {
+        self.title = String::from_utf8_lossy(title).into_owned();
+    }
+}
+
+/// The mirror must never take the app down: a parser bug only costs that pane's mirror.
+fn lock_screen(screen: &Mutex<Screen>) -> MutexGuard<'_, Screen> {
+    screen.lock().unwrap_or_else(PoisonError::into_inner)
+}
+
+/// When output started and when it last arrived, to tell a busy program from a one-off redraw.
+#[derive(Clone, Copy)]
+struct Activity {
+    burst_start: Instant,
+    last: Instant,
+}
+
+/// The visible screen as text.
+pub struct Snapshot {
+    pub title: String,
+    pub rows: Vec<String>,
+}
 
 /// A shell running in a pseudo terminal.
 ///
@@ -27,6 +65,9 @@ pub struct Pty {
     killer: Box<dyn ChildKiller + Send + Sync>,
     output: Arc<Mutex<Output>>,
     paused: Arc<(Mutex<bool>, Condvar)>,
+    screen: Arc<Mutex<Screen>>,
+    activity: Arc<Mutex<Activity>>,
+    pid: Option<u32>,
 }
 
 impl Pty {
@@ -73,11 +114,23 @@ impl Pty {
         // Only the master may keep the pty open, so the output ends when the shell does.
         drop(pair.slave);
         let killer = child.clone_killer();
+        let pid = child.process_id();
         let mut reader = pair.master.try_clone_reader()?;
         let mut writer = pair.master.take_writer()?;
         let master = Arc::new(Mutex::new(Some(pair.master)));
         let output = Arc::new(Mutex::new(output));
         let paused = Arc::new((Mutex::new(false), Condvar::new()));
+        let screen = Arc::new(Mutex::new(Screen::new_with_callbacks(
+            nonzero(rows),
+            nonzero(cols),
+            0,
+            TitleTracker::default(),
+        )));
+        let started = Instant::now() - QUIET;
+        let activity = Arc::new(Mutex::new(Activity {
+            burst_start: started,
+            last: started,
+        }));
 
         let (input, input_rx) = mpsc::channel::<Vec<u8>>();
         thread::spawn(move || {
@@ -116,6 +169,8 @@ impl Pty {
 
         let (status_tx, status_rx) = mpsc::channel::<Option<u32>>();
         let sink = Arc::clone(&output);
+        let mirror = Arc::clone(&screen);
+        let activity_log = Arc::clone(&activity);
         thread::spawn(move || {
             while let Ok(mut pending) = chunks_rx.recv() {
                 let deadline = Instant::now() + FLUSH_AFTER;
@@ -127,7 +182,25 @@ impl Pty {
                         Err(_) => break,
                     }
                 }
-                (sink.lock().unwrap())(pending);
+                // Holding the sink while updating the mirror keeps a repaint (set_output) from
+                // also receiving a chunk it already contains.
+                let mut sink = sink.lock().unwrap();
+                {
+                    let mut screen = lock_screen(&mirror);
+                    if panic::catch_unwind(AssertUnwindSafe(|| screen.process(&pending))).is_err() {
+                        let (rows, cols) = screen.screen().size();
+                        *screen =
+                            Screen::new_with_callbacks(rows, cols, 0, TitleTracker::default());
+                    }
+                }
+                let now = Instant::now();
+                let mut activity = activity_log.lock().unwrap();
+                if now.duration_since(activity.last) >= QUIET {
+                    activity.burst_start = now;
+                }
+                activity.last = now;
+                drop(activity);
+                sink(pending);
             }
             // The waiter reports before it closes the pty, which is what ended the output.
             let code = status_rx.recv().ok().flatten();
@@ -158,6 +231,9 @@ impl Pty {
             killer,
             output,
             paused,
+            screen,
+            activity,
+            pid,
         })
     }
 
@@ -166,15 +242,48 @@ impl Pty {
     }
 
     pub fn resize(&self, cols: u16, rows: u16) -> Result<(), PtyError> {
+        let mut screen = lock_screen(&self.screen);
+        let _ = panic::catch_unwind(AssertUnwindSafe(|| {
+            screen.set_size(nonzero(rows), nonzero(cols));
+        }));
+        drop(screen);
         if let Some(master) = &*self.master.lock().unwrap() {
             master.resize(size(cols, rows))?;
         }
         Ok(())
     }
 
-    /// Redirects output, e.g. to a reloaded UI.
-    pub fn set_output(&self, output: Output) {
-        *self.output.lock().unwrap() = output;
+    /// Redirects output, e.g. to a reloaded UI, repainting the current screen and restoring input
+    /// modes (bracketed paste, mouse, cursor keys) there first.
+    pub fn set_output(&self, mut output: Output) {
+        let mut current = self.output.lock().unwrap();
+        output(
+            lock_screen(&self.screen)
+                .screen()
+                .state_formatted()
+                .into_bytes(),
+        );
+        *current = output;
+    }
+
+    pub fn snapshot(&self) -> Snapshot {
+        let screen = lock_screen(&self.screen);
+        let (_, cols) = screen.screen().size();
+        Snapshot {
+            title: screen.callbacks().title.clone(),
+            rows: screen.screen().rows(0, cols.get()).collect(),
+        }
+    }
+
+    /// How long output has been streaming without a pause; `None` once it has gone quiet.
+    pub fn busy_for(&self) -> Option<Duration> {
+        let activity = *self.activity.lock().unwrap();
+        (activity.last.elapsed() < QUIET).then(|| activity.burst_start.elapsed())
+    }
+
+    /// The shell's process id; agents run among its descendants.
+    pub fn pid(&self) -> Option<u32> {
+        self.pid
     }
 
     /// Backpressure: while paused the OS pipe fills and the shell blocks on its own writes.
@@ -189,6 +298,10 @@ impl Pty {
         self.set_paused(false);
         let _ = self.killer.kill();
     }
+}
+
+fn nonzero(n: u16) -> NonZeroU16 {
+    NonZeroU16::new(n).unwrap_or(NonZeroU16::MIN)
 }
 
 fn size(cols: u16, rows: u16) -> PtySize {
@@ -259,10 +372,16 @@ mod tests {
         )
         .unwrap();
 
-        let echo = if cfg!(windows) {
-            "echo $env:SOLACE_TEST; exit\r"
+        let (echo, exit) = if cfg!(windows) {
+            (
+                "$host.UI.RawUI.WindowTitle = 'solace-title'; echo $env:SOLACE_TEST\r",
+                "exit\r",
+            )
         } else {
-            "echo $SOLACE_TEST; exit\n"
+            (
+                "printf '\\033]0;solace-title\\007'; echo $SOLACE_TEST\n",
+                "exit\n",
+            )
         };
         // ConPTY asks for the cursor position (DSR) at startup and waits; xterm answers in the app.
         pty.write(b"\x1b[1;1R".to_vec());
@@ -277,6 +396,12 @@ mod tests {
                 .unwrap_or_else(|_| panic!("no marker in {:?}", String::from_utf8_lossy(&seen)));
             seen.extend(chunk);
         }
+        let snapshot = pty.snapshot();
+        assert_eq!(snapshot.title, "solace-title");
+        assert!(snapshot.rows.iter().any(|row| row.trim() == "marker-42"));
+        assert!(pty.busy_for().is_some());
+
+        pty.write(exit.as_bytes().to_vec());
         let code = exit_rx
             .recv_timeout(Duration::from_secs(20))
             .expect("exit reported");

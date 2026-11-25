@@ -1,3 +1,4 @@
+mod agents;
 mod commands;
 
 use std::collections::HashMap;
@@ -13,6 +14,7 @@ use tauri::{Manager, RunEvent};
 pub struct AppState {
     session: Session,
     ptys: HashMap<PaneId, Pty>,
+    agents: HashMap<PaneId, agents::AgentEntry>,
     file: PathBuf,
 }
 
@@ -36,12 +38,16 @@ pub fn run() {
             app.manage(Mutex::new(AppState {
                 session,
                 ptys: HashMap::new(),
+                agents: HashMap::new(),
                 file,
             }));
+            let handle = app.handle().clone();
+            std::thread::spawn(move || agents::watch(handle));
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
             commands::session_get,
+            commands::agents_get,
             commands::space_open,
             commands::space_close,
             commands::space_activate,

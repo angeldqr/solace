@@ -1,15 +1,19 @@
 import { Plus, SquareTerminal, X } from "lucide-react";
+import { useAgents } from "../../shared/agents";
 import { t } from "../../shared/i18n";
 import { api, type Space } from "../../shared/ipc";
 import { displayTitle, useSession } from "../../shared/session";
+import { AgentIcon } from "../../shared/ui/AgentIcon";
 import { IconButton } from "../../shared/ui/IconButton";
 
 export function TabBar({ space }: { space: Space }) {
   const titles = useSession((s) => s.titles);
+  const agents = useAgents((s) => s.list);
   return (
     <div role="tablist" className="flex h-full min-w-0 items-center gap-1 pl-2">
       {space.tabs.map((tab) => {
         const active = tab.id === space.activeTab;
+        const agent = agents.find((a) => a.pane === tab.focused);
         return (
           <div
             key={tab.id}
@@ -24,8 +28,14 @@ export function TabBar({ space }: { space: Space }) {
               onClick={() => void api.tabActivate(tab.id)}
               className="flex h-full min-w-0 items-center gap-2 rounded-md pr-1 pl-2.5 text-xs"
             >
-              <SquareTerminal className="size-3.5 shrink-0" aria-hidden />
-              <span className="truncate">{displayTitle(titles[tab.focused], t("terminal"))}</span>
+              {agent ? (
+                <AgentIcon agent={agent.agent} />
+              ) : (
+                <SquareTerminal className="size-3.5 shrink-0" aria-hidden />
+              )}
+              <span className="truncate">
+                {agent?.name ?? displayTitle(titles[tab.focused], t("terminal"))}
+              </span>
             </button>
             <IconButton
               label={t("closeTab")}

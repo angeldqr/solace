@@ -64,6 +64,11 @@ fn none_closed(ok: bool) -> Option<Vec<PaneId>> {
     ok.then(Vec::new)
 }
 
+#[tauri::command]
+pub fn agents_get(state: State<Shared>) -> Vec<crate::agents::AgentView> {
+    crate::agents::views(&state.lock().unwrap())
+}
+
 /// Called once per page load. Panes the reloaded page doesn't show yet would otherwise stay
 /// paused with nobody left to resume them, silently stalling their shells.
 #[tauri::command]

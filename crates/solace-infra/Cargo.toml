@@ -8,6 +8,9 @@ repository.workspace = true
 
 [dependencies]
 portable-pty = "0.9"
+solace-core = { path = "../solace-core" }
+sysinfo = { version = "0.40", default-features = false, features = ["system"] }
+vt100 = "0.18"
 serde.workspace = true
 serde_json.workspace = true
 which = "8"

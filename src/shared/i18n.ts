@@ -25,6 +25,10 @@ const en = {
   maximize: "Maximize",
   close: "Close",
   terminal: "Terminal",
+  needsAttention: "Needs you",
+  agentDone: "Done",
+  agentWorking: "Working",
+  agentIdle: "Idle",
 };
 
 type Messages = typeof en;
@@ -57,6 +61,10 @@ const es: Messages = {
   maximize: "Maximizar",
   close: "Cerrar",
   terminal: "Terminal",
+  needsAttention: "Te necesitan",
+  agentDone: "Terminado",
+  agentWorking: "Trabajando",
+  agentIdle: "Inactivo",
 };
 
 export const locale = navigator.language.toLowerCase().startsWith("es") ? "es" : "en";

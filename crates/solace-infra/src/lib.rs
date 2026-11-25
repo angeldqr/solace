@@ -2,4 +2,5 @@
 
 pub mod git;
 pub mod persist;
+pub mod processes;
 pub mod pty;
