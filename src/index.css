@@ -14,9 +14,25 @@
   --color-hover: rgb(255 255 255 / 6%);
   --color-primary: oklch(0.571 0.21 264);
   --color-primary-soft: oklch(0.82 0.08 264);
+  --color-pane: #0a0a0b;
 
   --text-2xs: 11px;
   --ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);
+
+  --animate-fade-in: fade-in 120ms ease-out;
+  --animate-palette-in: palette-in 180ms var(--ease-drawer);
+
+  @keyframes fade-in {
+    from {
+      opacity: 0;
+    }
+  }
+  @keyframes palette-in {
+    from {
+      opacity: 0;
+      transform: translateY(-6px) scale(0.98);
+    }
+  }
 }
 
 @layer base {

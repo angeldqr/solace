@@ -1,0 +1,16 @@
+[package]
+name = "solace-infra"
+description = "Solace adapters: PTYs, persistence, git."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+portable-pty = "0.9"
+serde.workspace = true
+serde_json.workspace = true
+which = "8"
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = ["Win32_System_Console"] }

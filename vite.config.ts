@@ -8,6 +8,8 @@ const host = process.env.TAURI_DEV_HOST;
 export default defineConfig({
   plugins: [react(), tailwindcss()],
   clearScreen: false,
+  // Served from disk inside the app, so one larger chunk costs nothing.
+  build: { chunkSizeWarningLimit: 1500 },
   server: {
     port: 1420,
     strictPort: true,

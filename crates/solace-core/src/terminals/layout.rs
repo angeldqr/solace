@@ -37,7 +37,7 @@ impl Layout {
     /// Splits `target` in half, placing `new` after it.
     /// Returns false if `target` is absent or `new` is already in the layout.
     pub fn split(&mut self, target: PaneId, direction: Direction, new: PaneId) -> bool {
-        if self.panes().contains(&new) {
+        if self.contains(new) {
             return false;
         }
         self.split_leaf(target, direction, new)
@@ -82,6 +82,30 @@ impl Layout {
                 (Some(only), None) | (None, Some(only)) => Some(only),
                 (None, None) => None,
             },
+        }
+    }
+
+    pub fn contains(&self, pane: PaneId) -> bool {
+        match self {
+            Layout::Leaf { pane: p } => *p == pane,
+            Layout::Split { first, second, .. } => first.contains(pane) || second.contains(pane),
+        }
+    }
+
+    /// Sets the ratio of the split reached by `path` (0 = first child, 1 = second).
+    /// Ratios are clamped so no pane collapses; false for a bad path or non-finite ratio.
+    pub fn set_ratio(&mut self, path: &[u8], ratio: f32) -> bool {
+        if !ratio.is_finite() {
+            return false;
+        }
+        match (self, path.split_first()) {
+            (Layout::Split { ratio: r, .. }, None) => {
+                *r = ratio.clamp(0.1, 0.9);
+                true
+            }
+            (Layout::Split { first, .. }, Some((0, rest))) => first.set_ratio(rest, ratio),
+            (Layout::Split { second, .. }, Some((1, rest))) => second.set_ratio(rest, ratio),
+            _ => false,
         }
     }
 
@@ -138,6 +162,22 @@ mod tests {
                 ..
             }
         ));
+    }
+
+    #[test]
+    fn set_ratio_follows_path_and_clamps() {
+        let mut layout = Layout::leaf(A);
+        layout.split(A, Direction::Row, B);
+        layout.split(B, Direction::Column, C);
+        assert!(layout.set_ratio(&[], 0.95));
+        assert!(layout.set_ratio(&[1], 0.3));
+        assert!(!layout.set_ratio(&[0], 0.3), "path ends at a leaf");
+        assert!(!layout.set_ratio(&[], f32::NAN));
+        let Layout::Split { ratio, second, .. } = &layout else {
+            unreachable!()
+        };
+        assert_eq!(*ratio, 0.9);
+        assert!(matches!(**second, Layout::Split { ratio: 0.3, .. }));
     }
 
     #[test]
