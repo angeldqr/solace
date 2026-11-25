@@ -1,6 +1,7 @@
 import { relaunch } from "@tauri-apps/plugin-process";
 import { check, type Update } from "@tauri-apps/plugin-updater";
 import { create } from "zustand";
+import { useSettings } from "../settings/settings";
 
 const CHECK_EVERY = 6 * 60 * 60 * 1000;
 
@@ -9,7 +10,7 @@ const CHECK_EVERY = 6 * 60 * 60 * 1000;
 export const useUpdate = create<{ ready: Update | null }>(() => ({ ready: null }));
 
 async function checkAndDownload() {
-  if (useUpdate.getState().ready) return;
+  if (useUpdate.getState().ready || !useSettings.getState().checkUpdates) return;
   try {
     const update = await check();
     if (!update) return;

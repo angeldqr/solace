@@ -14,6 +14,8 @@ export interface Settings {
   cursorStyle: CursorStyle;
   cursorBlink: boolean;
   language: Language;
+  /** Look for new versions on GitHub; the only request Solace makes on its own. */
+  checkUpdates: boolean;
 }
 
 /** Read by i18n.ts too, before anything else loads. */
@@ -28,6 +30,7 @@ const DEFAULTS: Settings = {
   cursorStyle: "block",
   cursorBlink: true,
   language: "auto",
+  checkUpdates: true,
 };
 
 /** Stored settings, field by field: a bad value falls back to its default instead of breaking
@@ -53,6 +56,7 @@ function load(): Settings {
     cursorStyle: oneOf(raw.cursorStyle, ["block", "bar", "underline"], DEFAULTS.cursorStyle),
     cursorBlink: typeof raw.cursorBlink === "boolean" ? raw.cursorBlink : DEFAULTS.cursorBlink,
     language: oneOf(raw.language, ["auto", "en", "es"], DEFAULTS.language),
+    checkUpdates: typeof raw.checkUpdates === "boolean" ? raw.checkUpdates : DEFAULTS.checkUpdates,
   };
 }
 

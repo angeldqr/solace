@@ -70,6 +70,9 @@ const en = {
   about: "About",
   updateReady: "version {version} ready, restart to update",
   notifications: "Notifications",
+  checkUpdates: "Check for updates automatically",
+  privacyNote:
+    "Solace sends no usage data. Its only requests are to GitHub, to check for and download updates.",
   notifyAgents: "Notify me when an agent I'm not watching needs me or finishes",
   systemToastsOff:
     "Windows notifications are turned off (Settings > System > Notifications). Solace will still flash its taskbar button when an agent needs you.",
@@ -151,6 +154,9 @@ const es: Messages = {
   about: "Acerca de",
   updateReady: "versión {version} lista, reinicia para actualizar",
   notifications: "Notificaciones",
+  checkUpdates: "Buscar actualizaciones automáticamente",
+  privacyNote:
+    "Solace no envía datos de uso. Solo se conecta a GitHub para buscar y descargar actualizaciones.",
   notifyAgents: "Avisarme cuando un agente que no estoy mirando me necesite o termine",
   systemToastsOff:
     "Las notificaciones de Windows están desactivadas (Configuración > Sistema > Notificaciones). Aun así, Solace hará parpadear su botón en la barra de tareas cuando un agente te necesite.",

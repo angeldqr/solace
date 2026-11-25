@@ -44,6 +44,19 @@ Pushing a `vX.Y.Z` tag that matches `version` in `Cargo.toml` builds the Windows
 
 Signing needs the repository secrets `TAURI_SIGNING_PRIVATE_KEY` and `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`. The public key lives in `src-tauri/tauri.conf.json`; losing the private key means installed copies can no longer update.
 
+## Code signing policy
+
+Free code signing provided by [SignPath.io](https://about.signpath.io), certificate by [SignPath Foundation](https://signpath.org) (pending approval; until then releases are unsigned).
+
+- Committers and reviewers: [maintainers of this repository](https://github.com/angeldqr/solace/graphs/contributors)
+- Approvers: [repository owner](https://github.com/angeldqr)
+
+Setup details: [docs/code-signing.md](docs/code-signing.md).
+
+## Privacy
+
+Solace does not collect or send any usage data. The only network requests it makes on its own are to GitHub Releases, to check for and download updates. You can turn this off in **Settings > Updates**. Agents and programs you run in its terminals follow their own privacy policies.
+
 ## License
 
 [Apache-2.0](LICENSE). See [NOTICE](NOTICE) for attributions.

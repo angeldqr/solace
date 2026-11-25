@@ -366,6 +366,7 @@ function LanguageSection() {
 function About() {
   const [version, setVersion] = useState("");
   const update = useUpdate((s) => s.ready);
+  const checkUpdates = useSettings((s) => s.checkUpdates);
   useEffect(() => {
     void getVersion().then(setVersion);
   }, []);
@@ -380,6 +381,15 @@ function About() {
           </span>
         )}
       </p>
+      <Field label={t("checkUpdates")}>
+        <input
+          type="checkbox"
+          checked={checkUpdates}
+          onChange={(event) => updateSettings({ checkUpdates: event.target.checked })}
+          className="size-4 accent-[var(--color-primary)]"
+        />
+      </Field>
+      <p className="text-2xs text-fg-subtle">{t("privacyNote")}</p>
     </Section>
   );
 }

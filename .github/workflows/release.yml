@@ -11,13 +11,21 @@ permissions:
 jobs:
   windows:
     runs-on: windows-latest
+    env:
+      # Signing happens only once SignPath is set up (docs/code-signing.md).
+      SIGN: ${{ vars.SIGNPATH_ORGANIZATION_ID != '' }}
+      # Signs the update bundles; installed apps reject updates without a matching signature.
+      TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+      TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
     steps:
       - uses: actions/checkout@v7
       - name: Tag must match the workspace version
+        id: version
         shell: bash
         run: |
           version=$(grep -m1 '^version' Cargo.toml | cut -d'"' -f2)
           [ "${GITHUB_REF_NAME}" = "v${version}" ] || { echo "::error::tag ${GITHUB_REF_NAME} != v${version}"; exit 1; }
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
       - uses: pnpm/action-setup@v6
       - uses: actions/setup-node@v7
         with:
@@ -32,16 +40,81 @@ jobs:
       - run: node scripts/build-cli.mjs
       # Never ship a tag whose tests fail or whose Cargo.lock is stale.
       - run: cargo test --locked --workspace
-      - uses: tauri-apps/tauri-action@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # Signs the update bundles; installed apps reject updates without a matching signature.
-          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+
+      # Programs first, so the installers carry signed executables.
+      - run: pnpm tauri build --no-bundle
+      - name: Collect programs to sign
+        if: env.SIGN == 'true'
+        shell: bash
+        run: mkdir -p to-sign/programs && cp target/release/Solace.exe src-tauri/binaries/solace.exe to-sign/programs/
+      - uses: actions/upload-artifact@v7
+        id: programs
+        if: env.SIGN == 'true'
         with:
-          tagName: ${{ github.ref_name }}
-          releaseName: Solace ${{ github.ref_name }}
-          releaseBody: Download `Solace_*_x64-setup.exe` (recommended) or the `.msi` installer below.
-          releaseDraft: true
-          # Not a prerelease: the updater reads releases/latest, which skips prereleases.
-          prerelease: false
+          name: unsigned-programs
+          path: to-sign/programs
+      - uses: signpath/github-action-submit-signing-request@v3
+        if: env.SIGN == 'true'
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
+          project-slug: solace
+          signing-policy-slug: release-signing
+          artifact-configuration-slug: binaries
+          github-artifact-id: ${{ steps.programs.outputs.artifact-id }}
+          parameters: |
+            version: "${{ steps.version.outputs.version }}"
+          output-artifact-directory: signed/programs
+      - name: Use the signed programs
+        if: env.SIGN == 'true'
+        shell: bash
+        run: |
+          cp signed/programs/Solace.exe target/release/Solace.exe
+          cp signed/programs/solace.exe src-tauri/binaries/solace.exe
+
+      - run: pnpm tauri bundle
+      - name: Collect installers to sign
+        if: env.SIGN == 'true'
+        shell: bash
+        run: |
+          mkdir -p to-sign/installers
+          cp target/release/bundle/nsis/*-setup.exe target/release/bundle/msi/*.msi to-sign/installers/
+      - uses: actions/upload-artifact@v7
+        id: installers
+        if: env.SIGN == 'true'
+        with:
+          name: unsigned-installers
+          path: to-sign/installers
+      - uses: signpath/github-action-submit-signing-request@v3
+        if: env.SIGN == 'true'
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
+          project-slug: solace
+          signing-policy-slug: release-signing
+          artifact-configuration-slug: installers
+          github-artifact-id: ${{ steps.installers.outputs.artifact-id }}
+          output-artifact-directory: signed/installers
+      - name: Use the signed installers and re-sign them for the updater
+        if: env.SIGN == 'true'
+        shell: bash
+        run: |
+          cp signed/installers/*-setup.exe target/release/bundle/nsis/
+          cp signed/installers/*.msi target/release/bundle/msi/
+          # Authenticode changed the bytes, so the updater signatures must be made again.
+          for f in target/release/bundle/nsis/*-setup.exe target/release/bundle/msi/*.msi; do
+            pnpm tauri signer sign "$f"
+          done
+
+      - name: Write latest.json
+        run: node scripts/release-manifest.mjs ${{ steps.version.outputs.version }} target/release/bundle latest.json
+      - name: Create the draft release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "${GITHUB_REF_NAME}" --draft --title "Solace ${GITHUB_REF_NAME}" \
+            --notes "Download \`Solace_*_x64-setup.exe\` (recommended) or the \`.msi\` installer below." \
+            target/release/bundle/nsis/*-setup.exe target/release/bundle/nsis/*-setup.exe.sig \
+            target/release/bundle/msi/*.msi target/release/bundle/msi/*.msi.sig \
+            latest.json
