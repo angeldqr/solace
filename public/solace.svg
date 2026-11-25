@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+  <title>Solace</title>
+  <defs>
+    <linearGradient id="sun" x1="0" y1="1" x2="0" y2="0">
+      <stop offset="0" stop-color="#5b6cff"/>
+      <stop offset="1" stop-color="#b9c4ff"/>
+    </linearGradient>
+  </defs>
+  <rect width="1024" height="1024" rx="224" fill="#000"/>
+  <rect x="8" y="8" width="1008" height="1008" rx="216" fill="none" stroke="#fff" stroke-opacity=".1" stroke-width="16"/>
+  <path d="M272 600a240 240 0 0 1 480 0z" fill="url(#sun)"/>
+  <rect x="224" y="648" width="576" height="40" rx="20" fill="#fff" fill-opacity=".9"/>
+  <rect x="224" y="728" width="200" height="40" rx="20" fill="#fff" fill-opacity=".35"/>
+</svg>

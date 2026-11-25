@@ -1,0 +1,40 @@
+name: Release
+
+on:
+  push:
+    # Numeric versions only: WiX (MSI) rejects non-numeric pre-release suffixes.
+    tags: ["v[0-9]+.[0-9]+.[0-9]+"]
+
+permissions:
+  contents: write
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Tag must match the workspace version
+        shell: bash
+        run: |
+          version=$(grep -m1 '^version' Cargo.toml | cut -d'"' -f2)
+          [ "${GITHUB_REF_NAME}" = "v${version}" ] || { echo "::error::tag ${GITHUB_REF_NAME} != v${version}"; exit 1; }
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+      - uses: Swatinem/rust-cache@v2
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm lint:ci
+      - run: pnpm build
+      # Never ship a tag whose tests fail or whose Cargo.lock is stale.
+      - run: cargo test --locked --workspace
+      - uses: tauri-apps/tauri-action@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tagName: ${{ github.ref_name }}
+          releaseName: Solace ${{ github.ref_name }}
+          releaseBody: Download `Solace_*_x64-setup.exe` (recommended) or the `.msi` installer below.
+          releaseDraft: true
+          prerelease: true

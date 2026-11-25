@@ -1,0 +1,18 @@
+[package]
+name = "solace-app"
+description = "Solace desktop app: Tauri composition root"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[lib]
+# Distinct lib name avoids a bin/lib name clash on Windows (cargo#8519).
+name = "solace_app_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }

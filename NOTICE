@@ -1,0 +1,13 @@
+Solace
+Copyright 2026 The Solace Authors
+
+This product is licensed under the Apache License, Version 2.0 (see LICENSE).
+
+Solace's design takes inspiration from, and may adapt portions of, the following projects:
+
+- herdr (https://github.com/herdrdev/herdr), Apache License 2.0.
+  Agent detection rules and Windows ConPTY handling approaches.
+- T3 Code (https://github.com/pingdotgg/t3code), MIT License, Copyright (c) 2026 T3 Tools Inc.
+  Visual language: dark palette tokens and interface conventions.
+
+Any file adapted from these projects keeps a header naming its origin.
