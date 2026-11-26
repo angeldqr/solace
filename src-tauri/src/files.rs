@@ -178,6 +178,8 @@ mod tests {
         assert_eq!(inside(root, "").unwrap(), root);
         assert!(inside(root, "../secret").is_err());
         assert!(inside(root, "src/../../x").is_err());
+        // A drive path is absolute on Windows only; elsewhere it names a folder called "C:".
+        #[cfg(windows)]
         assert!(inside(root, "C:/Windows").is_err());
         assert!(inside(root, "/etc/passwd").is_err());
     }
