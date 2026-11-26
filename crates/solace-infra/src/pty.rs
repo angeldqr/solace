@@ -552,11 +552,13 @@ mod tests {
         let (exit_tx, exit_rx) = mpsc::channel();
         let cwd = std::env::temp_dir();
         let env = [("SOLACE_TEST", "marker-42".to_string())];
+        // Plain sh on Unix: a login bash's prompt (Ubuntu's) resets the title after each command.
+        let sh = Path::new("/bin/sh");
         let launch = Launch {
             cwd: &cwd,
             env: &env,
             bin_dir: None,
-            shell: None,
+            shell: (!cfg!(windows)).then_some(sh),
         };
         let pty = Pty::spawn(
             &launch,
@@ -583,7 +585,10 @@ mod tests {
             )
         };
         // ConPTY asks for the cursor position (DSR) at startup and waits; xterm answers in the app.
-        pty.write(b"\x1b[1;1R".to_vec());
+        // A Unix shell asked nothing, and would take the reply for typed text.
+        if cfg!(windows) {
+            pty.write(b"\x1b[1;1R".to_vec());
+        }
         pty.write(echo.as_bytes().to_vec());
 
         let mut seen = Vec::new();
