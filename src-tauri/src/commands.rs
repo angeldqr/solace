@@ -243,11 +243,15 @@ fn shell_exited(app: &AppHandle, pane: PaneId, code: Option<u32>) {
     }
 }
 
+/// False when the pane has no shell (it ended), so the UI can offer to start a new one.
 #[tauri::command]
-pub fn pty_write(state: State<Shared>, pane: PaneId, data: String) {
-    if let Some(pty) = state.lock().unwrap().ptys.get(&pane) {
+pub fn pty_write(state: State<Shared>, pane: PaneId, data: String) -> bool {
+    let state = state.lock().unwrap();
+    let pty = state.ptys.get(&pane);
+    if let Some(pty) = pty {
         pty.write(data.into_bytes());
     }
+    pty.is_some()
 }
 
 #[tauri::command]

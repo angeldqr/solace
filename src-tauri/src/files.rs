@@ -88,12 +88,16 @@ pub async fn git_diff(
     state: State<'_, Shared>,
     space: SpaceId,
     path: String,
+    from: Option<String>,
     untracked: bool,
 ) -> Result<String> {
     // Repository-relative, as git status reported it.
     inside(Path::new(""), &path)?;
+    if let Some(from) = &from {
+        inside(Path::new(""), from)?;
+    }
     let root = root_of(&state, space)?;
-    blocking(move || git::diff(&root, &path, untracked)).await
+    blocking(move || git::diff(&root, &path, from.as_deref(), untracked)).await
 }
 
 #[tauri::command]

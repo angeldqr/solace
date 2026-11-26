@@ -78,7 +78,7 @@ function DiffView({
   onBack: () => void;
 }) {
   const { data, error } = useOnDisk(
-    () => api.gitDiff(space, change.path, change.status === "U"),
+    () => api.gitDiff(space, change.path, change.from, change.status === "U"),
     `${space}:${change.status}:${change.path}`,
   );
   const diff = data ?? error ?? null;

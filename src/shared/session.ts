@@ -1,6 +1,14 @@
 import { listen } from "@tauri-apps/api/event";
 import { create } from "zustand";
-import { api, type Layout, type PaneId, type SessionView, type Space, type Tab } from "./ipc";
+import {
+  api,
+  type Direction,
+  type Layout,
+  type PaneId,
+  type SessionView,
+  type Space,
+  type Tab,
+} from "./ipc";
 
 interface SessionState {
   view: SessionView | null;
@@ -41,6 +49,20 @@ export function panesOf(layout: Layout): PaneId[] {
   return layout.type === "leaf"
     ? [layout.pane]
     : [...panesOf(layout.first), ...panesOf(layout.second)];
+}
+
+/** The split closest to `pane` that lays panes out along `direction`, and its path. */
+export function splitAround(
+  layout: Layout,
+  pane: PaneId,
+  direction: Direction,
+  path: number[] = [],
+): { path: number[]; ratio: number } | undefined {
+  if (layout.type === "leaf") return undefined;
+  const side = panesOf(layout.first).includes(pane) ? 0 : 1;
+  if (side === 1 && !panesOf(layout.second).includes(pane)) return undefined;
+  const inner = splitAround(side ? layout.second : layout.first, pane, direction, [...path, side]);
+  return inner ?? (layout.direction === direction ? { path, ratio: layout.ratio } : undefined);
 }
 
 /** Shells often report their executable path as the title; show just the program name. */

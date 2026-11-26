@@ -39,6 +39,8 @@ interface Entry {
   /** Stable element the terminal renders into; moved between hosts as tabs change. */
   el: HTMLDivElement;
   opened: boolean;
+  /** False while attaching, so Enter can't start a second shell meanwhile. */
+  attached: boolean;
   webgl?: WebglAddon;
   resizeTimer?: number;
 }
@@ -66,7 +68,11 @@ function create(pane: PaneId): Entry {
   term.loadAddon(new Unicode11Addon());
   term.unicode.activeVersion = "11";
 
-  term.onData((data) => void api.ptyWrite(pane, data));
+  term.onData((data) => {
+    void api.ptyWrite(pane, data).then((alive) => {
+      if (!alive && data.includes("\r")) restart(pane);
+    });
+  });
   term.onTitleChange((title) => setTitle(pane, title));
   term.attachCustomKeyEventHandler((event) => {
     if (event.type !== "keydown") return true;
@@ -84,10 +90,19 @@ function create(pane: PaneId): Entry {
 
   const el = document.createElement("div");
   el.className = "h-full w-full";
-  return { term, fit, el, opened: false };
+  return { term, fit, el, opened: false, attached: false };
 }
 
-function connect(pane: PaneId, { term }: Entry) {
+/** A pane whose shell failed stays open showing the exit code; Enter starts a new shell there. */
+function restart(pane: PaneId) {
+  const entry = entries.get(pane);
+  if (!entry?.attached) return;
+  entry.attached = false;
+  connect(pane, entry);
+}
+
+function connect(pane: PaneId, entry: Entry) {
+  const { term } = entry;
   let pending = 0;
   let paused = false;
   const output = new Channel<ArrayBuffer>((buffer) => {
@@ -105,9 +120,16 @@ function connect(pane: PaneId, { term }: Entry) {
       void api.ptyPause(pane, true);
     }
   });
-  api.ptyAttach(pane, term.cols, term.rows, output).catch((error) => {
-    term.write(`\x1b[31m${String(error)}\x1b[0m\r\n`);
-  });
+  api.ptyAttach(pane, term.cols, term.rows, output).then(
+    () => {
+      entry.attached = true;
+    },
+    (error) => {
+      // Lets Enter try again once the cause (a missing folder, a bad shell setting) is fixed.
+      entry.attached = true;
+      term.write(`\x1b[31m${String(error)}\x1b[0m\r\n`);
+    },
+  );
 }
 
 function enableWebgl(entry: Entry) {

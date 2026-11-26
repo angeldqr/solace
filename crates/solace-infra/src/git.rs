@@ -34,6 +34,8 @@ pub struct Change {
     /// M modified, A added, D deleted, R renamed, U untracked, C copied, T type change,
     /// ! merge conflict.
     pub status: char,
+    /// The path before a rename.
+    pub from: Option<String>,
     pub additions: Option<u32>,
     pub deletions: Option<u32>,
 }
@@ -143,10 +145,13 @@ pub fn external_git_dir(dir: &Path) -> Option<std::path::PathBuf> {
 const MAX_TEXT: u64 = 1024 * 1024;
 
 /// Unified diff of one file against the last commit; untracked files diff against nothing.
+/// A renamed file (`from` its old path) diffs against its old contents, not against nothing.
 /// Capped at MAX_TEXT so a huge file can't freeze the UI.
-pub fn diff(dir: &Path, path: &str, untracked: bool) -> Result<String, String> {
+pub fn diff(dir: &Path, path: &str, from: Option<&str>, untracked: bool) -> Result<String, String> {
     // literal: names like app/[id]/page.tsx must not act as glob patterns.
-    let top_path = format!(":(top,literal){path}");
+    let literal = |p: &str| format!(":(top,literal){p}");
+    let mut paths = vec![literal(path)];
+    paths.extend(from.map(literal));
     let mut text = if untracked {
         let top = git_text(dir, &["rev-parse", "--show-toplevel"])?;
         let full = Path::new(top.trim()).join(path);
@@ -180,10 +185,13 @@ pub fn diff(dir: &Path, path: &str, untracked: bool) -> Result<String, String> {
                 "diff",
                 "--no-ext-diff",
                 "--no-textconv",
+                "-M",
                 "HEAD",
                 "--",
-                &top_path,
-            ],
+            ]
+            .into_iter()
+            .chain(paths.iter().map(String::as_str))
+            .collect::<Vec<_>>(),
         )?
     };
     if text.len() as u64 > MAX_TEXT {
@@ -205,10 +213,10 @@ fn parse_status(porcelain: &str) -> Vec<Change> {
         };
         let mut chars = code.chars();
         let (index, worktree) = (chars.next().unwrap_or(' '), chars.next().unwrap_or(' '));
-        if matches!(index, 'R' | 'C') || matches!(worktree, 'R' | 'C') {
-            // Renames and copies are followed by the original path.
-            fields.next();
-        }
+        // Renames and copies are followed by the original path.
+        let from = (matches!(index, 'R' | 'C') || matches!(worktree, 'R' | 'C'))
+            .then(|| fields.next().map(str::to_string))
+            .flatten();
         let status = match (index, worktree) {
             ('?', _) => 'U',
             ('U', _) | (_, 'U') | ('A', 'A') | ('D', 'D') => '!',
@@ -218,6 +226,8 @@ fn parse_status(porcelain: &str) -> Vec<Change> {
         changes.push(Change {
             path: path.to_string(),
             status,
+            // A copy's source still exists with its own changes; only renames diff against it.
+            from: from.filter(|_| status == 'R'),
             additions: None,
             deletions: None,
         });
@@ -273,6 +283,7 @@ mod tests {
         let counts = parse_numstat("3\t1\tsrc/a.rs\0-\t-\tlogo.png\0");
         assert_eq!(counts[0], ("src/a.rs".to_string(), (Some(3), Some(1))));
         assert_eq!(counts[1], ("logo.png".to_string(), (None, None)));
+        assert_eq!(status[2].from.as_deref(), Some("old.rs"));
         let renamed = parse_numstat("0\t0\t\0old.rs\0renamed.rs\0");
         assert_eq!(renamed[0].0, "renamed.rs");
     }
@@ -324,11 +335,26 @@ mod tests {
         assert_eq!((new.status, new.additions), ('U', Some(2)));
 
         assert!(
-            diff(&root, "tracked.txt", false)
+            diff(&root, "tracked.txt", None, false)
                 .unwrap()
                 .contains("+three")
         );
-        assert!(diff(&root, "new.txt", true).unwrap().contains("+b"));
+        assert!(diff(&root, "new.txt", None, true).unwrap().contains("+b"));
+        run(&["mv", "tracked.txt", "moved.txt"]);
+        // Back to the committed text: a pure rename, which git must report as one.
+        fs::write(root.join("moved.txt"), "one\n").unwrap();
+        let moved = status(&root).unwrap().unwrap();
+        let moved = moved.iter().find(|c| c.path == "moved.txt").unwrap();
+        assert_eq!(
+            (moved.status, moved.from.as_deref()),
+            ('R', Some("tracked.txt"))
+        );
+        let renamed = diff(&root, "moved.txt", Some("tracked.txt"), false).unwrap();
+        assert!(renamed.contains("rename from tracked.txt"), "{renamed}");
+        assert!(
+            !renamed.contains("+one"),
+            "a rename is not shown as a whole new file"
+        );
         assert_eq!(
             status(&std::env::temp_dir().join("solace-not-a-repo-xyz"))
                 .ok()

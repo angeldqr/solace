@@ -288,14 +288,17 @@ impl Pty {
             }
             // The waiter reports before it closes the pty, which is what ended the output.
             let code = status_rx.recv().ok().flatten();
+            // First, so the pane counts as ended before the user can read the note and press Enter.
+            on_exit(code);
             if code != Some(0) {
                 let code = code.map_or("unknown".to_string(), |c| (c as i32).to_string());
-                let note = format!("\r\n\x1b[2m[process exited with code {code}]\x1b[0m\r\n");
+                let note = format!(
+                    "\r\n\x1b[2m[process exited with code {code} · press Enter to restart]\x1b[0m\r\n"
+                );
                 if let Some(sink) = sink.lock().unwrap().as_mut() {
                     sink(note.into_bytes());
                 }
             }
-            on_exit(code);
         });
 
         let pty = Arc::clone(&master);

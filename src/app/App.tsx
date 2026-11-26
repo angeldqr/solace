@@ -39,7 +39,7 @@ function useShortcuts() {
         return;
       }
       // Holding a shortcut must not open or close a pane per auto-repeat.
-      if (event.repeat && isAppShortcut(event)) {
+      if (event.repeat && isAppShortcut(event) && !commandFor(event)?.repeat) {
         event.preventDefault();
         return;
       }

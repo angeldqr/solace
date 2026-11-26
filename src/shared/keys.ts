@@ -1,7 +1,15 @@
+const ARROWS: Record<string, string> = {
+  "←": "arrowleft",
+  "→": "arrowright",
+  "↑": "arrowup",
+  "↓": "arrowdown",
+};
+
 /** True when `event` matches a combo like "Ctrl+Shift+T". */
 export function matches(event: KeyboardEvent, combo: string) {
   const parts = combo.split("+");
-  const key = parts[parts.length - 1].toLowerCase();
+  const last = parts[parts.length - 1];
+  const key = ARROWS[last] ?? last.toLowerCase();
   return (
     event.ctrlKey === parts.includes("Ctrl") &&
     event.shiftKey === parts.includes("Shift") &&

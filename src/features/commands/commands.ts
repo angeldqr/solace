@@ -1,9 +1,9 @@
 import { open } from "@tauri-apps/plugin-dialog";
 import { create } from "zustand";
 import type { MessageKey } from "../../shared/i18n";
-import { api, type PaneId } from "../../shared/ipc";
+import { api, type Direction, type PaneId } from "../../shared/ipc";
 import { matches } from "../../shared/keys";
-import { current } from "../../shared/session";
+import { current, splitAround } from "../../shared/session";
 import { togglePanel } from "../files/panel";
 import { openSettings } from "../settings/dialog";
 import { focusTerminal } from "../terminals/registry";
@@ -12,6 +12,8 @@ export interface Command {
   id: string;
   title: MessageKey;
   keys?: string;
+  /** Runs again while the keys are held. */
+  repeat?: boolean;
   run: () => unknown;
 }
 
@@ -43,6 +45,16 @@ function cycleTab(step: number) {
   return api.tabActivate(next.id);
 }
 
+/** Moves the divider next to the focused pane; the backend keeps it within 10–90%. */
+function moveDivider(direction: Direction, step: number) {
+  const { tab, pane } = current();
+  const split = tab && pane !== undefined && splitAround(tab.layout, pane, direction);
+  return split && api.splitResize(tab.id, split.path, split.ratio + step);
+}
+
+const divider = (id: string, title: MessageKey, keys: string, direction: Direction, step: number) =>
+  ({ id, title, keys, repeat: true, run: () => moveDivider(direction, step) }) satisfies Command;
+
 export const commands: Command[] = [
   // Plain Ctrl+<letter> belongs to the shell and agents (Claude Code uses Ctrl+O), so app keys add Shift.
   { id: "open-folder", title: "openFolder", keys: "Ctrl+Shift+O", run: openFolder },
@@ -73,6 +85,10 @@ export const commands: Command[] = [
     keys: "Ctrl+Shift+W",
     run: () => withPane(api.paneClose),
   },
+  divider("divider-left", "moveDividerLeft", "Alt+Shift+←", "row", -0.05),
+  divider("divider-right", "moveDividerRight", "Alt+Shift+→", "row", 0.05),
+  divider("divider-up", "moveDividerUp", "Alt+Shift+↑", "column", -0.05),
+  divider("divider-down", "moveDividerDown", "Alt+Shift+↓", "column", 0.05),
   { id: "next-tab", title: "nextTab", keys: "Ctrl+Tab", run: () => cycleTab(1) },
   { id: "previous-tab", title: "previousTab", keys: "Ctrl+Shift+Tab", run: () => cycleTab(-1) },
   {

@@ -40,6 +40,8 @@ export interface Change {
   path: string;
   /** M modified, A added, D deleted, R renamed, U untracked, C copied, T type change. */
   status: string;
+  /** The path before a rename. */
+  from: string | null;
   additions: number | null;
   deletions: number | null;
 }
@@ -65,14 +67,15 @@ export const api = {
     invoke("split_resize", { tab, path, ratio }),
   ptyAttach: (pane: PaneId, cols: number, rows: number, output: Channel<ArrayBuffer>) =>
     invoke("pty_attach", { pane, cols, rows, output }),
-  ptyWrite: (pane: PaneId, data: string) => invoke("pty_write", { pane, data }),
+  /** False when the pane's shell has ended. */
+  ptyWrite: (pane: PaneId, data: string) => invoke<boolean>("pty_write", { pane, data }),
   ptyResize: (pane: PaneId, cols: number, rows: number) =>
     invoke("pty_resize", { pane, cols, rows }),
   ptyPause: (pane: PaneId, paused: boolean) => invoke("pty_pause", { pane, paused }),
   filesList: (space: SpaceId, path: string) => invoke<FileEntry[]>("files_list", { space, path }),
   gitStatus: (space: SpaceId) => invoke<Change[] | null>("git_status", { space }),
-  gitDiff: (space: SpaceId, path: string, untracked: boolean) =>
-    invoke<string>("git_diff", { space, path, untracked }),
+  gitDiff: (space: SpaceId, path: string, from: string | null, untracked: boolean) =>
+    invoke<string>("git_diff", { space, path, from, untracked }),
   fileOpen: (space: SpaceId, path: string) => invoke("file_open", { space, path }),
   shellsList: () => invoke<Shell[]>("shells_list"),
   settingsGet: () => invoke<{ shell: string | null; notifications: boolean }>("settings_get"),
