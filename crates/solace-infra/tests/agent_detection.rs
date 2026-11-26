@@ -42,7 +42,10 @@ fn fake_claude_under_the_shell_is_identified_and_working() {
         |_| {},
     )
     .unwrap();
-    pty.write(b"\x1b[1;1R".to_vec());
+    // ConPTY waits for the answer to its cursor query; a Unix shell would read it as typing.
+    if cfg!(windows) {
+        pty.write(b"\x1b[1;1R".to_vec());
+    }
     let script = package.join("cli.js");
     pty.write(format!("node \"{}\"\r", script.display()).into_bytes());
 

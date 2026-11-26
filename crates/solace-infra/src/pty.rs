@@ -602,7 +602,13 @@ mod tests {
         }
         let snapshot = pty.snapshot();
         assert_eq!(snapshot.title, "solace-title");
-        assert!(snapshot.rows.iter().any(|row| row.trim() == "marker-42"));
+        // A Unix shell may print its prompt after the echoed input, so the output follows it.
+        assert!(
+            snapshot
+                .rows
+                .iter()
+                .any(|row| row.trim().ends_with("marker-42"))
+        );
         assert!(pty.busy_for().is_some());
 
         pty.write(exit.as_bytes().to_vec());
