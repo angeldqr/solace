@@ -1,5 +1,5 @@
 import type { ITheme } from "@xterm/xterm";
-import { DEFAULT_THEME, THEMES, type Theme } from "./themes";
+import { DEFAULT_FAMILY, type Theme } from "./themes";
 
 /** VS Code themes are JSON with comments and trailing commas; strip both, minding strings. */
 export function parseJsonc(text: string): unknown {
@@ -75,7 +75,7 @@ export function fromVsCode(text: string): Theme {
   const isDark = json.type
     ? json.type !== "light" && json.type !== "hc-light"
     : !editor || hexLuminance(editor) < 0.5;
-  const base = isDark ? DEFAULT_THEME : (THEMES.find((t) => !t.dark) ?? DEFAULT_THEME);
+  const base = isDark ? DEFAULT_FAMILY.dark : DEFAULT_FAMILY.light;
   const canvas = pick("sideBar.background", "activityBar.background") ?? editor;
   const accent = pick("button.background", "focusBorder", "activityBarBadge.background");
 

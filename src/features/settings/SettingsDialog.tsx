@@ -4,11 +4,20 @@ import { type ReactNode, useEffect, useRef, useState } from "react";
 import { type MessageKey, t } from "../../shared/i18n";
 import { api, type Shell } from "../../shared/ipc";
 import { current } from "../../shared/session";
+import { Select } from "../../shared/ui/Select";
 import { focusTerminal } from "../terminals/registry";
 import { useUpdate } from "../updates/updates";
 import { useSettingsDialog } from "./dialog";
-import { type CursorStyle, type Language, updateSettings, useSettings } from "./settings";
-import { THEMES, type Theme } from "./themes";
+import {
+  type Appearance,
+  type CursorStyle,
+  type Language,
+  resolveTheme,
+  updateSettings,
+  useSettings,
+  useSystemDark,
+} from "./settings";
+import { FAMILIES, type Theme } from "./themes";
 import { fromVsCode } from "./vscodeTheme";
 
 const FONTS = ["JetBrains Mono", "Cascadia Code", "Cascadia Mono", "Consolas"];
@@ -29,14 +38,6 @@ function Dialog() {
     // Opened with Ctrl+, the keyboard is still in the terminal: take it, or typing (and Escape)
     // would go to the shell behind the dialog.
     box.current?.focus();
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        event.preventDefault();
-        close();
-      }
-    };
-    window.addEventListener("keydown", onKey, true);
-    return () => window.removeEventListener("keydown", onKey, true);
   }, []);
   return (
     <div
@@ -49,7 +50,14 @@ function Dialog() {
         role="dialog"
         aria-modal="true"
         aria-labelledby="settings-title"
-        className="flex h-fit max-h-[84vh] w-[min(620px,92vw)] flex-col overflow-hidden rounded-xl border border-line bg-surface shadow-2xl shadow-black/50 motion-safe:animate-palette-in"
+        // React events bubble through portals: an open Select handles (and prevents) its own
+        // Escape first, so only an unhandled one closes the dialog.
+        onKeyDown={(event) => {
+          if (event.key !== "Escape" || event.defaultPrevented) return;
+          event.preventDefault();
+          close();
+        }}
+        className="flex outline-none h-fit max-h-[84vh] w-[min(620px,92vw)] flex-col overflow-hidden rounded-xl border border-line bg-surface shadow-2xl shadow-black/50 motion-safe:animate-palette-in"
       >
         <header className="flex h-12 shrink-0 items-center border-line border-b pr-2 pl-5">
           <h2 id="settings-title" className="font-medium text-sm">
@@ -65,7 +73,7 @@ function Dialog() {
           </button>
         </header>
         <div className="flex flex-col gap-7 overflow-y-auto px-5 py-5">
-          <Appearance />
+          <AppearanceSection />
           <TerminalSection />
           <AgentsSection />
           <ShellSection />
@@ -100,11 +108,21 @@ function Field({ label, children }: { label: string; children: ReactNode }) {
 const control =
   "h-8 rounded-md border border-line bg-canvas px-2 text-body text-fg outline-none focus-visible:border-primary";
 
-function Appearance() {
-  const { theme, custom } = useSettings();
+function AppearanceSection() {
+  const settings = useSettings();
+  const { theme, custom, appearance } = settings;
+  const systemDark = useSystemDark();
   const [source, setSource] = useState("");
   const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null);
-  const themes = custom ? [...THEMES, custom] : THEMES;
+  const themes = [
+    ...FAMILIES.map((family) => resolveTheme({ ...settings, theme: family.id }, systemDark)),
+    ...(custom ? [custom] : []),
+  ];
+  const modes: { value: Appearance; label: string }[] = [
+    { value: "system", label: t("appearanceSystem") },
+    { value: "light", label: t("appearanceLight") },
+    { value: "dark", label: t("appearanceDark") },
+  ];
 
   const importTheme = () => {
     try {
@@ -119,6 +137,16 @@ function Appearance() {
 
   return (
     <Section title="appearance">
+      <Field label={t("appearanceMode")}>
+        <Select
+          value={appearance}
+          options={modes}
+          label={t("appearanceMode")}
+          disabled={theme === "custom"}
+          onChange={(value) => updateSettings({ appearance: value })}
+        />
+      </Field>
+      {theme === "custom" && <p className="text-2xs text-fg-subtle">{t("customThemeHint")}</p>}
       <div role="radiogroup" aria-label={t("theme")} className="grid grid-cols-3 gap-2">
         {themes.map((option) => (
           <ThemeCard key={option.id} theme={option} selected={option.id === theme} />

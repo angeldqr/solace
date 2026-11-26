@@ -50,6 +50,11 @@ const en = {
   settings: "Settings",
   appearance: "Appearance",
   theme: "Theme",
+  appearanceMode: "Mode",
+  appearanceSystem: "System",
+  appearanceLight: "Light",
+  appearanceDark: "Dark",
+  customThemeHint: "Imported themes have a single appearance",
   importVsCode: "Import a VS Code theme",
   importVsCodeHint:
     "Paste the theme's JSON file. Missing colours come from the closest built-in theme.",
@@ -141,6 +146,11 @@ const es: Messages = {
   settings: "Ajustes",
   appearance: "Apariencia",
   theme: "Tema",
+  appearanceMode: "Modo",
+  appearanceSystem: "Sistema",
+  appearanceLight: "Claro",
+  appearanceDark: "Oscuro",
+  customThemeHint: "Los temas importados tienen una sola apariencia",
   importVsCode: "Importar un tema de VS Code",
   importVsCodeHint:
     "Pega el JSON del tema. Los colores que falten se toman del tema incluido más parecido.",

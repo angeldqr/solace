@@ -6,16 +6,23 @@ export function Select<T extends string>({
   options,
   onChange,
   label,
+  disabled,
   className = "",
 }: {
   value: T;
   options: readonly { value: T; label: string }[];
   onChange: (v: T) => void;
   label: string;
+  disabled?: boolean;
   className?: string;
 }) {
   return (
-    <BaseSelect.Root value={value} items={options} onValueChange={(v) => v !== null && onChange(v)}>
+    <BaseSelect.Root
+      value={value}
+      items={options}
+      disabled={disabled}
+      onValueChange={(v) => v !== null && onChange(v)}
+    >
       <BaseSelect.Trigger
         aria-label={label}
         className={`flex h-8 min-w-40 items-center justify-between gap-2 rounded-lg border border-line bg-canvas/40 px-2.5 text-body text-fg transition-colors duration-150 hover:bg-hover disabled:pointer-events-none disabled:opacity-50 ${className}`}

@@ -5,7 +5,7 @@ import { WebglAddon } from "@xterm/addon-webgl";
 import { Terminal } from "@xterm/xterm";
 import { api, type PaneId } from "../../shared/ipc";
 import { panesOf, setTitle, useSession } from "../../shared/session";
-import { activeTheme, terminalFontFamily, useSettings } from "../settings/settings";
+import { activeTheme, terminalFontFamily, useSettings, useSystemDark } from "../settings/settings";
 
 // xterm.js flow-control guide: pause the pty above HIGH unprocessed bytes; HIGH under ~500K keeps typing snappy.
 const HIGH = 256 * 1024;
@@ -218,7 +218,7 @@ useSession.subscribe(({ view }) => {
 });
 
 // Settings apply live: theme, font and cursor changes reach every open terminal.
-useSettings.subscribe(() => {
+function applySettingsToTerminals() {
   fontsReady = fontReady();
   void fontsReady.then(() => {
     const options = terminalOptions();
@@ -227,4 +227,6 @@ useSettings.subscribe(() => {
       refit(pane, entry);
     }
   });
-});
+}
+useSettings.subscribe(applySettingsToTerminals);
+useSystemDark.subscribe(applySettingsToTerminals);

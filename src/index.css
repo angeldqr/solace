@@ -1,6 +1,6 @@
 @import "tailwindcss";
 
-/* Light themes (data-theme on <html>, set by applyTheme). */
+/* Light themes (data-theme on <html>, set by applyAppearance). */
 @custom-variant light (&:where([data-theme="light"], [data-theme="light"] *));
 
 /* Design tokens. Dark-first; values start from T3 Code's quiet black palette. */
