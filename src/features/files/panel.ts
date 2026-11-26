@@ -1,6 +1,7 @@
 import { listen } from "@tauri-apps/api/event";
 import { create } from "zustand";
 import type { SpaceId } from "../../shared/ipc";
+import { useSidebar } from "../spaces/sidebarWidth";
 
 export type PanelTab = "files" | "changes";
 
@@ -16,9 +17,19 @@ interface PanelState {
 
 export const DEFAULT_WIDTH = 420;
 export const MIN_WIDTH = 280;
+/** The terminal area never gets narrower than this because of the panel. */
+export const TERMINAL_MIN_WIDTH = 360;
 const ABSOLUTE_MAX_WIDTH = 960;
-/** Resolved on every drag or key press (ResizeHandle takes the function): the panel never takes more than 60% of the window. */
-export const maxWidth = () => Math.min(ABSOLUTE_MAX_WIDTH, Math.round(window.innerWidth * 0.6));
+/** Resolved on every drag or key press (ResizeHandle takes the function): the panel never takes more than 60% of the window or leaves the terminal under TERMINAL_MIN_WIDTH. */
+export const maxWidth = () =>
+  Math.max(
+    MIN_WIDTH,
+    Math.min(
+      ABSOLUTE_MAX_WIDTH,
+      Math.round(window.innerWidth * 0.6),
+      window.innerWidth - useSidebar.getState().width - TERMINAL_MIN_WIDTH,
+    ),
+  );
 
 const STORAGE_KEY = "solace.panel";
 const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) ?? "{}") as Partial<PanelState>;

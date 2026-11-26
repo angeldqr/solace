@@ -1,6 +1,14 @@
+import { i18n } from "@pierre/diffs";
 import { PatchDiff } from "@pierre/diffs/react";
 import { useMemo } from "react";
+import { locale, t } from "../../shared/i18n";
 import { resolveTheme, terminalFontFamily, useSettings, useSystemDark } from "../settings/settings";
+
+// The library renders its own hunk separators; "#" is its plural placeholder. The language only changes on reload.
+i18n.set({
+  locale,
+  messages: { unmodifiedLines: `{count, plural, other {${t("unmodifiedLines", { n: "#" })}}}` },
+});
 
 // Pane colour follows the app theme; added/removed lines are tinted from it.
 const UNSAFE_CSS = `:host, pre, code { --diffs-bg: var(--color-pane); }
