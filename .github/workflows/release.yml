@@ -195,8 +195,9 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         run: |
+          shopt -s nullglob
           for f in release/*.AppImage release/*.app.tar.gz; do
-            [ -e "$f" ] && pnpm tauri signer sign "$f"
+            pnpm tauri signer sign "$f"
           done
       - uses: actions/upload-artifact@v7
         with:
