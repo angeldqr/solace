@@ -48,6 +48,7 @@ fn command(dir: &Path) -> Command {
 }
 
 fn windowless(program: &str) -> Command {
+    #[cfg_attr(not(windows), allow(unused_mut))]
     let mut command = Command::new(program);
     #[cfg(windows)]
     {
