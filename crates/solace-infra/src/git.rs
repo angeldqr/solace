@@ -40,17 +40,9 @@ pub struct Change {
     pub deletions: Option<u32>,
 }
 
-fn git(dir: &Path, args: &[&str]) -> io::Result<Output> {
+fn command(dir: &Path) -> Command {
     let mut command = Command::new("git");
-    // Read-only: without this, `git status` rewrites .git/index, which the file watcher would
-    // report, which would trigger another status, forever.
-    // The repository's own config is not trusted: a folder from anywhere could set
-    // core.fsmonitor (also a refresh loop: its cookie files trip our watcher), an external diff
-    // or a textconv driver, all of which run programs.
-    command
-        .args(["--no-optional-locks", "-c", "core.fsmonitor=false"])
-        .args(args)
-        .current_dir(dir);
+    command.current_dir(dir);
     #[cfg(windows)]
     {
         use std::os::windows::process::CommandExt;
@@ -58,7 +50,58 @@ fn git(dir: &Path, args: &[&str]) -> io::Result<Output> {
         const CREATE_NO_WINDOW: u32 = 0x0800_0000;
         command.creation_flags(CREATE_NO_WINDOW);
     }
+    command
+}
+
+fn git(dir: &Path, args: &[&str]) -> io::Result<Output> {
+    let mut command = command(dir);
+    // Read-only: without this, `git status` rewrites .git/index, which the file watcher would
+    // report, which would trigger another status, forever.
+    // The repository's own config is not trusted: a folder from anywhere could set
+    // core.fsmonitor (also a refresh loop: its cookie files trip our watcher), an external diff,
+    // a textconv driver or a filter driver, all of which run programs. Submodules, whose config
+    // we don't read, are only compared by commit (--ignore-submodules=dirty at the call sites).
+    command
+        .args(["--no-optional-locks", "-c", "core.fsmonitor=false"])
+        .args(args);
+    // `-c` can't name drivers it doesn't know, so the filters the config defines are blanked one
+    // by one, through GIT_CONFIG_* so that a driver name holding '=' can't break the parsing.
+    let mut count = 0;
+    for name in filter_drivers(dir) {
+        for (key, value) in [
+            ("clean", ""),
+            ("smudge", ""),
+            ("process", ""),
+            ("required", "false"),
+        ] {
+            command
+                .env(
+                    format!("GIT_CONFIG_KEY_{count}"),
+                    format!("filter.{name}.{key}"),
+                )
+                .env(format!("GIT_CONFIG_VALUE_{count}"), value);
+            count += 1;
+        }
+    }
+    command.env("GIT_CONFIG_COUNT", count.to_string());
     command.output()
+}
+
+/// Names of the filter drivers the config seen from `dir` defines. Reading config runs nothing.
+fn filter_drivers(dir: &Path) -> Vec<String> {
+    let Ok(output) = command(dir)
+        .args(["config", "-z", "--name-only", "--get-regexp", r"^filter\."])
+        .output()
+    else {
+        return Vec::new();
+    };
+    let mut names: Vec<String> = String::from_utf8_lossy(&output.stdout)
+        .split('\0')
+        .filter_map(|key| Some(key.strip_prefix("filter.")?.rsplit_once('.')?.0.to_string()))
+        .collect();
+    names.sort();
+    names.dedup();
+    names
 }
 
 fn git_text(dir: &Path, args: &[&str]) -> Result<String, String> {
@@ -85,6 +128,7 @@ pub fn status(dir: &Path) -> Result<Option<Vec<Change>>, String> {
             "core.quotepath=off",
             "status",
             "--porcelain=v1",
+            "--ignore-submodules=dirty",
             "-z",
             "--untracked-files=all",
             "--",
@@ -99,6 +143,7 @@ pub fn status(dir: &Path) -> Result<Option<Vec<Change>>, String> {
             "diff",
             "--no-ext-diff",
             "--no-textconv",
+            "--ignore-submodules=dirty",
             "HEAD",
             "--numstat",
             "-z",
@@ -185,6 +230,7 @@ pub fn diff(dir: &Path, path: &str, from: Option<&str>, untracked: bool) -> Resu
                 "diff",
                 "--no-ext-diff",
                 "--no-textconv",
+                "--ignore-submodules=dirty",
                 "-M",
                 "HEAD",
                 "--",
@@ -362,6 +408,63 @@ mod tests {
             None
         );
         let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn filters_from_the_repository_config_never_run() {
+        if git(&std::env::temp_dir(), &["--version"]).is_err() {
+            eprintln!("skipped: git is not installed");
+            return;
+        }
+        let root = std::env::temp_dir().join(format!("solace-git-filter-{}", std::process::id()));
+        fs::create_dir_all(&root).unwrap();
+        let run =
+            |args: &[&str]| assert!(git(&root, args).unwrap().status.success(), "git {args:?}");
+        run(&["init", "-q"]);
+        fs::write(root.join("f.txt"), "a\n").unwrap();
+        run(&["add", "f.txt"]);
+        run(&[
+            "-c",
+            "user.name=t",
+            "-c",
+            "user.email=t@t",
+            "commit",
+            "-q",
+            "-m",
+            "init",
+        ]);
+        // Plain git config writes, which bypass our overrides.
+        for (key, value) in [
+            ("filter.x.clean", "touch RAN_CLEAN; cat"),
+            ("filter.x.process", "touch RAN_PROCESS"),
+            ("filter.a=b.process", "touch RAN_ODD_NAME"),
+        ] {
+            let mut config = command(&root);
+            assert!(
+                config
+                    .args(["config", key, value])
+                    .status()
+                    .unwrap()
+                    .success()
+            );
+        }
+        fs::write(
+            root.join(".gitattributes"),
+            "f.txt filter=x\n*.md filter=a=b\n",
+        )
+        .unwrap();
+        fs::write(root.join("f.txt"), "a\nb\n").unwrap();
+        fs::write(root.join("n.md"), "x\n").unwrap();
+
+        status(&root).unwrap();
+        diff(&root, "f.txt", None, false).unwrap();
+        let ran: Vec<_> = fs::read_dir(&root)
+            .unwrap()
+            .filter_map(|e| e.ok()?.file_name().into_string().ok())
+            .filter(|name| name.starts_with("RAN_"))
+            .collect();
+        let _ = fs::remove_dir_all(&root);
+        assert!(ran.is_empty(), "filters ran: {ran:?}");
     }
 
     #[test]
