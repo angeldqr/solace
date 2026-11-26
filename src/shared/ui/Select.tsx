@@ -1,5 +1,6 @@
 import { Select as BaseSelect } from "@base-ui/react/select";
 import { Check, ChevronsUpDown } from "lucide-react";
+import { useDescribedBy } from "./describedBy";
 
 export function Select<T extends string>({
   value,
@@ -16,6 +17,7 @@ export function Select<T extends string>({
   disabled?: boolean;
   className?: string;
 }) {
+  const describedBy = useDescribedBy();
   return (
     <BaseSelect.Root
       value={value}
@@ -25,6 +27,7 @@ export function Select<T extends string>({
     >
       <BaseSelect.Trigger
         aria-label={label}
+        aria-describedby={describedBy}
         className={`flex h-8 min-w-40 items-center justify-between gap-2 rounded-lg border border-line bg-canvas/40 px-2.5 text-body text-fg transition-colors duration-150 hover:bg-hover disabled:pointer-events-none disabled:opacity-50 ${className}`}
       >
         <BaseSelect.Value />

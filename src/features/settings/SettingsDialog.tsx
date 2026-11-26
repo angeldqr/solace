@@ -1,30 +1,81 @@
-import { getVersion } from "@tauri-apps/api/app";
-import { X } from "lucide-react";
-import { type ReactNode, useEffect, useRef, useState } from "react";
-import { type MessageKey, t } from "../../shared/i18n";
-import { api, type Shell } from "../../shared/ipc";
-import { current } from "../../shared/session";
-import { Select } from "../../shared/ui/Select";
-import { focusTerminal } from "../terminals/registry";
-import { useUpdate } from "../updates/updates";
-import { useSettingsDialog } from "./dialog";
+import { Dialog } from "@base-ui/react/dialog";
 import {
-  type Appearance,
-  type CursorStyle,
-  type Language,
-  resolveTheme,
-  updateSettings,
-  useSettings,
-  useSystemDark,
-} from "./settings";
-import { FAMILIES, type Theme } from "./themes";
-import { fromVsCode } from "./vscodeTheme";
+  Bot,
+  Info,
+  Keyboard,
+  Palette,
+  RotateCcw,
+  Search,
+  SlidersHorizontal,
+  SquareTerminal,
+  Terminal as TerminalIcon,
+  X,
+} from "lucide-react";
+import { type ComponentType, type RefObject, useMemo, useRef, useState } from "react";
+import { t } from "../../shared/i18n";
+import { current } from "../../shared/session";
+import { Button } from "../../shared/ui/Button";
+import { Kbd } from "../../shared/ui/Kbd";
+import { focusTerminal } from "../terminals/registry";
+import { useSettingsDialog } from "./dialog";
+import { filterPages, PAGES, type PageId, RESETTABLE } from "./pages";
+import { About } from "./pages/About";
+import { Agents } from "./pages/Agents";
+import { Appearance } from "./pages/Appearance";
+import { General } from "./pages/General";
+import { Shell } from "./pages/Shell";
+import { Shortcuts } from "./pages/Shortcuts";
+import { Terminal } from "./pages/Terminal";
+import { DEFAULTS, updateSettings } from "./settings";
 
-const FONTS = ["JetBrains Mono", "Cascadia Code", "Cascadia Mono", "Consolas"];
+const ICONS: Record<PageId, ComponentType<{ className?: string }>> = {
+  general: SlidersHorizontal,
+  appearance: Palette,
+  terminal: SquareTerminal,
+  agents: Bot,
+  shell: TerminalIcon,
+  shortcuts: Keyboard,
+  about: Info,
+};
+
+const CONTENT: Record<PageId, ComponentType> = {
+  general: General,
+  appearance: Appearance,
+  terminal: Terminal,
+  agents: Agents,
+  shell: Shell,
+  shortcuts: Shortcuts,
+  about: About,
+};
+
+/** Reopening the dialog returns to the page it was left on. */
+let lastPage: PageId = "general";
 
 export function SettingsDialog() {
   const open = useSettingsDialog((s) => s.open);
-  return open ? <Dialog /> : null;
+  const search = useRef<HTMLInputElement>(null);
+  return (
+    <Dialog.Root open={open} onOpenChange={(next) => !next && close()}>
+      <Dialog.Portal>
+        <Dialog.Backdrop className="backdrop-dim fixed inset-0 z-50 transition-opacity duration-200 data-ending-style:opacity-0 data-starting-style:opacity-0" />
+        <Dialog.Popup
+          initialFocus={search}
+          onKeyDown={(event) => {
+            // Keys from portaled popups (an open Select) bubble through React too.
+            if (!event.currentTarget.contains(event.target as Node)) return;
+            const target = event.target as HTMLElement;
+            if (event.key !== "/" || event.ctrlKey || event.metaKey || event.altKey) return;
+            if (target.closest("input, textarea, select, [contenteditable]")) return;
+            event.preventDefault();
+            search.current?.focus();
+          }}
+          className="glass light:bg-surface fixed top-1/2 left-1/2 z-50 flex h-[min(720px,88vh)] w-[min(1040px,94vw)] -translate-x-1/2 -translate-y-1/2 overflow-hidden rounded-2xl border border-line shadow-2xl shadow-black/50 outline-none transition-[opacity,scale] duration-200 ease-(--ease-drawer) data-ending-style:scale-[0.98] data-starting-style:scale-[0.98] data-ending-style:opacity-0 data-starting-style:opacity-0"
+        >
+          <SettingsBody search={search} />
+        </Dialog.Popup>
+      </Dialog.Portal>
+    </Dialog.Root>
+  );
 }
 
 function close() {
@@ -32,428 +83,107 @@ function close() {
   focusTerminal(current().pane);
 }
 
-function Dialog() {
-  const box = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    // Opened with Ctrl+, the keyboard is still in the terminal: take it, or typing (and Escape)
-    // would go to the shell behind the dialog.
-    box.current?.focus();
-  }, []);
-  return (
-    <div
-      className="fixed inset-0 z-50 flex justify-center bg-black/50 pt-[8vh] motion-safe:animate-fade-in"
-      onPointerDown={(event) => event.target === event.currentTarget && close()}
-    >
-      <div
-        ref={box}
-        tabIndex={-1}
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="settings-title"
-        // React events bubble through portals: an open Select handles (and prevents) its own
-        // Escape first, so only an unhandled one closes the dialog.
-        onKeyDown={(event) => {
-          if (event.key !== "Escape" || event.defaultPrevented) return;
-          event.preventDefault();
-          close();
-        }}
-        className="flex outline-none h-fit max-h-[84vh] w-[min(620px,92vw)] flex-col overflow-hidden rounded-xl border border-line bg-surface shadow-2xl shadow-black/50 motion-safe:animate-palette-in"
-      >
-        <header className="flex h-12 shrink-0 items-center border-line border-b pr-2 pl-5">
-          <h2 id="settings-title" className="font-medium text-sm">
-            {t("settings")}
-          </h2>
-          <button
-            type="button"
-            onClick={close}
-            aria-label={t("close")}
-            className="ml-auto grid size-8 place-items-center rounded-md text-fg-muted hover:bg-hover hover:text-fg"
-          >
-            <X aria-hidden className="size-4" />
-          </button>
-        </header>
-        <div className="flex flex-col gap-7 overflow-y-auto px-5 py-5">
-          <AppearanceSection />
-          <TerminalSection />
-          <AgentsSection />
-          <ShellSection />
-          <NotificationsSection />
-          <LanguageSection />
-          <About />
-        </div>
-      </div>
-    </div>
-  );
-}
+function SettingsBody({ search }: { search: RefObject<HTMLInputElement | null> }) {
+  const [page, setPageState] = useState<PageId>(lastPage);
+  const [query, setQuery] = useState("");
+  // Bumped by "Restore defaults" so the page remounts and drops its local state.
+  const [resets, setResets] = useState(0);
+  const visible = useMemo(() => filterPages(query, t), [query]);
 
-function Section({ title, children }: { title: MessageKey; children: ReactNode }) {
-  return (
-    <section className="flex flex-col gap-3">
-      <h3 className="font-medium text-fg text-xs">{t(title)}</h3>
-      {children}
-    </section>
-  );
-}
-
-function Field({ label, children }: { label: string; children: ReactNode }) {
-  return (
-    // biome-ignore lint/a11y/noLabelWithoutControl: the control is passed in as a child
-    <label className="flex items-center justify-between gap-4 text-fg-muted">
-      <span>{label}</span>
-      {children}
-    </label>
-  );
-}
-
-const control =
-  "h-8 rounded-md border border-line bg-canvas px-2 text-body text-fg outline-none focus-visible:border-primary";
-
-function AppearanceSection() {
-  const settings = useSettings();
-  const { theme, custom, appearance } = settings;
-  const systemDark = useSystemDark();
-  const [source, setSource] = useState("");
-  const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null);
-  const themes = [
-    ...FAMILIES.map((family) => resolveTheme({ ...settings, theme: family.id }, systemDark)),
-    ...(custom ? [custom] : []),
-  ];
-  const modes: { value: Appearance; label: string }[] = [
-    { value: "system", label: t("appearanceSystem") },
-    { value: "light", label: t("appearanceLight") },
-    { value: "dark", label: t("appearanceDark") },
-  ];
-
-  const importTheme = () => {
-    try {
-      const imported = fromVsCode(source);
-      updateSettings({ custom: imported, theme: "custom" });
-      setMessage({ ok: true, text: t("themeImported", { name: imported.name }) });
-      setSource("");
-    } catch (error) {
-      setMessage({ ok: false, text: (error as Error).message });
-    }
+  const setPage = (id: PageId) => {
+    lastPage = id;
+    setPageState(id);
   };
+  const resettable = RESETTABLE[page];
+  const restore = () => {
+    if (!resettable) return;
+    updateSettings(Object.fromEntries(resettable.map((key) => [key, DEFAULTS[key]])));
+    setResets(resets + 1);
+  };
+  const Content = CONTENT[page];
+  const title = t(PAGES.find((p) => p.id === page)?.title ?? "settings");
 
   return (
-    <Section title="appearance">
-      <Field label={t("appearanceMode")}>
-        <Select
-          value={appearance}
-          options={modes}
-          label={t("appearanceMode")}
-          disabled={theme === "custom"}
-          onChange={(value) => updateSettings({ appearance: value })}
-        />
-      </Field>
-      {theme === "custom" && <p className="text-2xs text-fg-subtle">{t("customThemeHint")}</p>}
-      <div role="radiogroup" aria-label={t("theme")} className="grid grid-cols-3 gap-2">
-        {themes.map((option) => (
-          <ThemeCard key={option.id} theme={option} selected={option.id === theme} />
-        ))}
-      </div>
-      <details className="group text-fg-muted">
-        <summary className="cursor-pointer select-none hover:text-fg">{t("importVsCode")}</summary>
-        <div className="mt-2 flex flex-col gap-2">
-          <p className="text-2xs text-fg-subtle">{t("importVsCodeHint")}</p>
-          <textarea
-            value={source}
-            onChange={(event) => setSource(event.target.value)}
-            rows={5}
-            spellCheck={false}
-            aria-label={t("importVsCode")}
-            className={`${control} h-auto py-2 font-mono text-2xs`}
+    <>
+      <nav className="flex w-60 shrink-0 flex-col gap-3 border-line border-r p-3">
+        <div className="relative">
+          <Search
+            aria-hidden
+            className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-fg-subtle"
           />
-          <div className="flex items-center gap-3">
-            <button
-              type="button"
-              onClick={importTheme}
-              disabled={!source.trim()}
-              className="h-8 rounded-md bg-primary px-3 font-medium text-on-primary transition-[filter] hover:brightness-110 disabled:opacity-40"
-            >
-              {t("import")}
-            </button>
-            {message && (
-              <p role="status" className={message.ok ? "text-fg-muted" : "text-danger"}>
-                {message.text}
-              </p>
+          <input
+            ref={search}
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter" && visible[0]) setPage(visible[0]);
+            }}
+            placeholder={t("searchSettings")}
+            aria-label={t("searchSettings")}
+            className="h-8 w-full rounded-lg border border-line bg-canvas/40 pr-8 pl-8 text-body text-fg placeholder:text-fg-subtle focus-visible:border-primary focus-visible:outline-offset-0"
+          />
+          {!query && (
+            <span className="pointer-events-none absolute top-1/2 right-2 -translate-y-1/2">
+              <Kbd keys="/" />
+            </span>
+          )}
+        </div>
+        <div className="flex flex-col gap-0.5">
+          {visible.length === 0 && (
+            <p className="px-2.5 py-1 text-fg-subtle text-xs">{t("noSettingsMatch")}</p>
+          )}
+          {PAGES.filter((p) => visible.includes(p.id)).map((p) => {
+            const Icon = ICONS[p.id];
+            const active = p.id === page;
+            return (
+              <button
+                key={p.id}
+                type="button"
+                aria-current={active ? "page" : undefined}
+                onClick={() => setPage(p.id)}
+                className={`flex h-8 w-full items-center gap-2.5 rounded-lg px-2.5 text-body transition-colors duration-150 ${
+                  active
+                    ? "bg-selected font-medium text-fg"
+                    : "text-fg-muted hover:bg-hover hover:text-fg"
+                } ${p.id === "shortcuts" && !query ? "mt-4" : ""}`}
+              >
+                <Icon className="size-4" />
+                {t(p.title)}
+              </button>
+            );
+          })}
+        </div>
+      </nav>
+      <div className="flex min-w-0 flex-1 flex-col">
+        <header className="flex h-12 shrink-0 items-center gap-2 border-line border-b pr-3 pl-5">
+          <Dialog.Title className="text-sm">
+            <span className="text-fg-muted">{t("settings")}</span>
+            <span aria-hidden className="px-1.5 text-fg-subtle">
+              /
+            </span>
+            <span className="font-medium text-fg">{title}</span>
+          </Dialog.Title>
+          <div className="ml-auto flex items-center gap-2">
+            {resettable && (
+              <Button variant="ghost" size="sm" onClick={restore}>
+                <RotateCcw aria-hidden />
+                {t("restoreDefaults")}
+              </Button>
             )}
+            <Dialog.Close
+              aria-label={t("close")}
+              className="grid size-8 place-items-center rounded-lg text-fg-muted transition-colors duration-150 hover:bg-hover hover:text-fg"
+            >
+              <X aria-hidden className="size-4" />
+            </Dialog.Close>
+          </div>
+        </header>
+        <div className="flex-1 overflow-y-auto">
+          <div className="mx-auto flex max-w-[720px] flex-col gap-9 px-8 py-7">
+            <Content key={`${page}-${resets}`} />
           </div>
         </div>
-      </details>
-    </Section>
-  );
-}
-
-/** A miniature of the theme: canvas, a pane with a few coloured terminal lines, the accent. */
-function ThemeCard({ theme, selected }: { theme: Theme; selected: boolean }) {
-  const term = theme.terminal;
-  return (
-    // biome-ignore lint/a11y/useSemanticElements: a native radio can't hold the theme preview
-    <button
-      type="button"
-      role="radio"
-      aria-checked={selected}
-      onClick={() => updateSettings({ theme: theme.id })}
-      className={`flex flex-col gap-2 rounded-lg border p-2 text-left transition-colors duration-150 ${
-        selected ? "border-primary" : "border-line hover:border-line-strong"
-      }`}
-    >
-      <span
-        aria-hidden
-        className="flex h-14 flex-col justify-center gap-1 rounded-md px-2"
-        style={{ background: theme.ui.canvas }}
-      >
-        <span
-          className="flex flex-col gap-1 rounded px-1.5 py-1"
-          style={{ background: term.background }}
-        >
-          <span className="h-1 w-3/4 rounded-full" style={{ background: term.foreground }} />
-          <span className="flex gap-1">
-            {[term.green, term.blue, term.yellow, term.red].map((color) => (
-              <span key={color} className="h-1 w-3 rounded-full" style={{ background: color }} />
-            ))}
-          </span>
-        </span>
-        <span className="h-1 w-6 rounded-full" style={{ background: theme.ui.primary }} />
-      </span>
-      <span className="truncate px-0.5 text-fg">{theme.name}</span>
-    </button>
-  );
-}
-
-function TerminalSection() {
-  const s = useSettings();
-  const [typing, setTyping] = useState(!FONTS.includes(s.fontFamily));
-  return (
-    <Section title="terminalSection">
-      <Field label={t("fontFamily")}>
-        <span className="flex gap-2">
-          <select
-            value={typing ? "other" : s.fontFamily}
-            onChange={(event) => {
-              const other = event.target.value === "other";
-              setTyping(other);
-              if (!other) updateSettings({ fontFamily: event.target.value });
-            }}
-            className={control}
-          >
-            {FONTS.map((font) => (
-              <option key={font} value={font}>
-                {font}
-              </option>
-            ))}
-            <option value="other">{t("otherFont")}</option>
-          </select>
-          {typing && (
-            <input
-              value={s.fontFamily}
-              onChange={(event) => updateSettings({ fontFamily: event.target.value })}
-              aria-label={t("fontFamily")}
-              className={`${control} w-36`}
-            />
-          )}
-        </span>
-      </Field>
-      <Field label={t("fontSize")}>
-        <input
-          type="number"
-          min={9}
-          max={28}
-          value={s.fontSize}
-          onChange={(event) => {
-            const size = Number(event.target.value);
-            if (size >= 9 && size <= 28) updateSettings({ fontSize: size });
-          }}
-          className={`${control} w-20`}
-        />
-      </Field>
-      <Field label={t("lineHeight")}>
-        <select
-          value={s.lineHeight}
-          onChange={(event) => updateSettings({ lineHeight: Number(event.target.value) })}
-          className={control}
-        >
-          {[1, 1.1, 1.2, 1.3, 1.4, 1.5].map((value) => (
-            <option key={value} value={value}>
-              {value.toFixed(1)}
-            </option>
-          ))}
-        </select>
-      </Field>
-      <Field label={t("cursorStyle")}>
-        <select
-          value={s.cursorStyle}
-          onChange={(event) => updateSettings({ cursorStyle: event.target.value as CursorStyle })}
-          className={control}
-        >
-          <option value="block">{t("cursorBlock")}</option>
-          <option value="bar">{t("cursorBar")}</option>
-          <option value="underline">{t("cursorUnderline")}</option>
-        </select>
-      </Field>
-      <Field label={t("cursorBlink")}>
-        <input
-          type="checkbox"
-          checked={s.cursorBlink}
-          onChange={(event) => updateSettings({ cursorBlink: event.target.checked })}
-          className="size-4 accent-[var(--color-primary)]"
-        />
-      </Field>
-    </Section>
-  );
-}
-
-function ShellSection() {
-  const [shells, setShells] = useState<Shell[]>([]);
-  const [selected, setSelected] = useState<string>("");
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    void api.shellsList().then(setShells);
-    void api.settingsGet().then((settings) => setSelected(settings.shell ?? ""));
-  }, []);
-
-  const choose = (path: string) => {
-    setSelected(path);
-    api.shellSet(path || null).then(
-      () => setError(null),
-      (e) => setError(String(e)),
-    );
-  };
-
-  return (
-    <Section title="shell">
-      <Field label={t("shellForNewTerminals")}>
-        <select
-          value={selected}
-          onChange={(event) => choose(event.target.value)}
-          className={control}
-        >
-          <option value="">{t("shellDefault")}</option>
-          {shells.map((shell) => (
-            <option key={shell.path} value={shell.path}>
-              {shell.name}
-            </option>
-          ))}
-        </select>
-      </Field>
-      {error && <p className="text-danger">{error}</p>}
-    </Section>
-  );
-}
-
-function AgentsSection() {
-  const [installed, setInstalled] = useState<boolean | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
-  useEffect(() => {
-    api.claudeIntegrationInstalled().then(setInstalled, (e) => setError(String(e)));
-  }, []);
-  const toggle = (enabled: boolean) => {
-    setError(null);
-    setBusy(true);
-    api
-      .claudeIntegrationSet(enabled)
-      .then(
-        () => setInstalled(enabled),
-        (e) => setError(String(e)),
-      )
-      .finally(() => setBusy(false));
-  };
-  return (
-    <Section title="agents">
-      <Field label={t("claudeIntegration")}>
-        <input
-          type="checkbox"
-          checked={installed ?? false}
-          disabled={installed === null || busy}
-          onChange={(event) => toggle(event.target.checked)}
-          className="size-4 accent-[var(--color-primary)]"
-        />
-      </Field>
-      <p className="text-2xs text-fg-subtle">{t("claudeIntegrationHint")}</p>
-      {error && <p className="text-danger">{error}</p>}
-    </Section>
-  );
-}
-
-function NotificationsSection() {
-  const [enabled, setEnabled] = useState<boolean | null>(null);
-  const [systemOn, setSystemOn] = useState(true);
-  useEffect(() => {
-    void api.settingsGet().then((settings) => setEnabled(settings.notifications));
-    void api.systemToastsEnabled().then(setSystemOn);
-  }, []);
-  if (enabled === null) return null;
-  return (
-    <Section title="notifications">
-      <Field label={t("notifyAgents")}>
-        <input
-          type="checkbox"
-          checked={enabled}
-          onChange={(event) => {
-            setEnabled(event.target.checked);
-            void api.notificationsSet(event.target.checked);
-          }}
-          className="size-4 accent-[var(--color-primary)]"
-        />
-      </Field>
-      {enabled && !systemOn && <p className="text-2xs text-fg-subtle">{t("systemToastsOff")}</p>}
-    </Section>
-  );
-}
-
-function LanguageSection() {
-  const language = useSettings((s) => s.language);
-  return (
-    <Section title="language">
-      <Field label={t("interfaceLanguage")}>
-        <select
-          value={language}
-          onChange={(event) => {
-            updateSettings({ language: event.target.value as Language });
-            // Text is chosen at load; terminals and agents survive the reload.
-            location.reload();
-          }}
-          className={control}
-        >
-          <option value="auto">{t("languageAuto")}</option>
-          <option value="en">English</option>
-          <option value="es">Español</option>
-        </select>
-      </Field>
-    </Section>
-  );
-}
-
-function About() {
-  const [version, setVersion] = useState("");
-  const update = useUpdate((s) => s.ready);
-  const checkUpdates = useSettings((s) => s.checkUpdates);
-  useEffect(() => {
-    void getVersion().then(setVersion);
-  }, []);
-  return (
-    <Section title="about">
-      <p className="text-fg-muted">
-        Solace {version}
-        {update && (
-          <span className="text-primary-soft">
-            {" "}
-            · {t("updateReady", { version: update.version })}
-          </span>
-        )}
-      </p>
-      <Field label={t("checkUpdates")}>
-        <input
-          type="checkbox"
-          checked={checkUpdates}
-          onChange={(event) => updateSettings({ checkUpdates: event.target.checked })}
-          className="size-4 accent-[var(--color-primary)]"
-        />
-      </Field>
-      <p className="text-2xs text-fg-subtle">{t("privacyNote")}</p>
-    </Section>
+      </div>
+    </>
   );
 }

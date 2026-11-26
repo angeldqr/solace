@@ -88,6 +88,26 @@ const en = {
   notifyAgents: "Notify me when an agent I'm not watching needs me or finishes",
   systemToastsOff:
     "Windows notifications are turned off (Settings > System > Notifications). Solace will still flash its taskbar button when an agent needs you.",
+  general: "General",
+  updates: "Updates",
+  languageHint: "Solace restarts its window to apply it; terminals keep running.",
+  interfaceSection: "Interface",
+  interfaceSize: "Interface size",
+  interfaceSizeHint: "Scales text and spacing across Solace.",
+  contrast: "Contrast",
+  contrastHint: "Strengthens or softens secondary text and borders.",
+  glass: "Glass",
+  glassHint: "Opacity of dialogs and menus over the content behind them.",
+  terminalSample: "Terminal preview",
+  shortcuts: "Shortcuts",
+  keyboardShortcuts: "Keyboard shortcuts",
+  version: "Version",
+  license: "License",
+  privacy: "Privacy",
+  upToDate: "Up to date",
+  searchSettings: "Search settings",
+  noSettingsMatch: "No settings match",
+  restoreDefaults: "Restore defaults",
 };
 
 type Messages = typeof en;
@@ -184,6 +204,26 @@ const es: Messages = {
   notifyAgents: "Avisarme cuando un agente que no estoy mirando me necesite o termine",
   systemToastsOff:
     "Las notificaciones de Windows están desactivadas (Configuración > Sistema > Notificaciones). Aun así, Solace hará parpadear su botón en la barra de tareas cuando un agente te necesite.",
+  general: "General",
+  updates: "Actualizaciones",
+  languageHint: "Solace reinicia su ventana para aplicarlo; las terminales siguen funcionando.",
+  interfaceSection: "Interfaz",
+  interfaceSize: "Tamaño de la interfaz",
+  interfaceSizeHint: "Escala el texto y los espacios en todo Solace.",
+  contrast: "Contraste",
+  contrastHint: "Refuerza o suaviza el texto secundario y los bordes.",
+  glass: "Cristal",
+  glassHint: "Opacidad de los diálogos y menús sobre el contenido que tienen detrás.",
+  terminalSample: "Vista previa de la terminal",
+  shortcuts: "Atajos",
+  keyboardShortcuts: "Atajos de teclado",
+  version: "Versión",
+  license: "Licencia",
+  privacy: "Privacidad",
+  upToDate: "Al día",
+  searchSettings: "Buscar ajustes",
+  noSettingsMatch: "Ningún ajuste coincide",
+  restoreDefaults: "Restablecer valores",
 };
 
 /** The language picked in settings, else the system's. Changing it reloads the page. */

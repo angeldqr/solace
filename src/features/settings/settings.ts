@@ -30,7 +30,7 @@ export interface Settings {
 /** Read by i18n.ts too, before anything else loads. */
 export const SETTINGS_KEY = "solace.settings";
 
-const DEFAULTS: Settings = {
+export const DEFAULTS: Settings = {
   theme: DEFAULT_FAMILY.id,
   appearance: "dark",
   uiScale: 16,
