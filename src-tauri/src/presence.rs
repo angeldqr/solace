@@ -2,12 +2,12 @@
 //! Only the agent's name and a count are ever sent: never folders, projects, branches or files.
 
 use std::io::{self, Read, Write};
-use std::sync::mpsc::{self, RecvTimeoutError, Sender};
 use std::sync::OnceLock;
+use std::sync::mpsc::{self, RecvTimeoutError, Sender};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use serde::Deserialize;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 /// The Discord application's public ID (Developer Portal). Empty disables the feature.
 const DISCORD_APP_ID: &str = "";

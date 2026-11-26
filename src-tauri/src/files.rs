@@ -134,24 +134,36 @@ const MAX_IMAGE: u64 = 10 * 1024 * 1024;
 #[derive(Serialize, Debug, PartialEq)]
 #[serde(tag = "kind", rename_all = "camelCase")]
 pub enum FileContent {
-    Text { text: String, size: u64 },
+    Text {
+        text: String,
+        size: u64,
+    },
     #[serde(rename_all = "camelCase")]
-    Image { data_url: String, size: u64 },
-    Binary { size: u64 },
-    TooLarge { size: u64 },
+    Image {
+        data_url: String,
+        size: u64,
+    },
+    Binary {
+        size: u64,
+    },
+    TooLarge {
+        size: u64,
+    },
 }
 
 fn image_mime(name: &str) -> Option<&'static str> {
-    Some(match name.rsplit_once('.')?.1.to_ascii_lowercase().as_str() {
-        "png" => "image/png",
-        "jpg" | "jpeg" => "image/jpeg",
-        "gif" => "image/gif",
-        "webp" => "image/webp",
-        "bmp" => "image/bmp",
-        "ico" => "image/x-icon",
-        "svg" => "image/svg+xml",
-        _ => return None,
-    })
+    Some(
+        match name.rsplit_once('.')?.1.to_ascii_lowercase().as_str() {
+            "png" => "image/png",
+            "jpg" | "jpeg" => "image/jpeg",
+            "gif" => "image/gif",
+            "webp" => "image/webp",
+            "bmp" => "image/bmp",
+            "ico" => "image/x-icon",
+            "svg" => "image/svg+xml",
+            _ => return None,
+        },
+    )
 }
 
 /// Pure part of `file_read`: size limits are checked by the caller before reading.
@@ -166,7 +178,10 @@ fn classify(name: &str, bytes: Vec<u8>) -> FileContent {
     }
     match String::from_utf8(bytes) {
         Ok(text) => FileContent::Text {
-            text: text.strip_prefix('\u{feff}').map(str::to_owned).unwrap_or(text),
+            text: text
+                .strip_prefix('\u{feff}')
+                .map(str::to_owned)
+                .unwrap_or(text),
             size,
         },
         Err(_) => FileContent::Binary { size },
@@ -187,7 +202,10 @@ fn contained(root: &Path, target: &Path) -> Result<PathBuf> {
 #[tauri::command]
 pub fn open_url(app: AppHandle, url: String) -> Result<()> {
     let lower = url.to_ascii_lowercase();
-    if !["http://", "https://", "mailto:"].iter().any(|s| lower.starts_with(s)) {
+    if !["http://", "https://", "mailto:"]
+        .iter()
+        .any(|s| lower.starts_with(s))
+    {
         return Err("unsupported link".into());
     }
     app.opener()
@@ -205,18 +223,27 @@ pub async fn file_read(
     let target = inside(&root, &path)?;
     blocking(move || {
         let target = contained(&root, &target)?;
-        if std::fs::metadata(&target).map_err(|e| e.to_string())?.is_dir() {
+        if std::fs::metadata(&target)
+            .map_err(|e| e.to_string())?
+            .is_dir()
+        {
             return Err("is a folder".into());
         }
         let name = target.file_name().and_then(|n| n.to_str()).unwrap_or("");
-        let limit = if image_mime(name).is_some() { MAX_IMAGE } else { MAX_TEXT };
+        let limit = if image_mime(name).is_some() {
+            MAX_IMAGE
+        } else {
+            MAX_TEXT
+        };
         // The size on disk can lag or lie (growing logs, special files): never read past the limit.
         let mut bytes = Vec::new();
         File::open(&target)
             .and_then(|f| f.take(limit + 1).read_to_end(&mut bytes))
             .map_err(|e| e.to_string())?;
         if bytes.len() as u64 > limit {
-            let size = std::fs::metadata(&target).map(|m| m.len()).unwrap_or(limit + 1);
+            let size = std::fs::metadata(&target)
+                .map(|m| m.len())
+                .unwrap_or(limit + 1);
             return Ok(FileContent::TooLarge { size });
         }
         Ok(classify(name, bytes))
@@ -308,12 +335,30 @@ mod tests {
 
     #[test]
     fn classifies_file_contents() {
-        let text = |s: &str| FileContent::Text { text: s.into(), size: s.len() as u64 };
-        assert_eq!(classify("a.rs", b"fn main() {}".to_vec()), text("fn main() {}"));
+        let text = |s: &str| FileContent::Text {
+            text: s.into(),
+            size: s.len() as u64,
+        };
+        assert_eq!(
+            classify("a.rs", b"fn main() {}".to_vec()),
+            text("fn main() {}")
+        );
         let bom = classify("a.md", b"\xEF\xBB\xBFhi".to_vec());
-        assert_eq!(bom, FileContent::Text { text: "hi".into(), size: 5 });
-        assert_eq!(classify("a.bin", vec![1, 0, 2]), FileContent::Binary { size: 3 });
-        assert_eq!(classify("a.txt", vec![0xff, 0xfe, 0x41]), FileContent::Binary { size: 3 });
+        assert_eq!(
+            bom,
+            FileContent::Text {
+                text: "hi".into(),
+                size: 5
+            }
+        );
+        assert_eq!(
+            classify("a.bin", vec![1, 0, 2]),
+            FileContent::Binary { size: 3 }
+        );
+        assert_eq!(
+            classify("a.txt", vec![0xff, 0xfe, 0x41]),
+            FileContent::Binary { size: 3 }
+        );
         let FileContent::Image { data_url, .. } = classify("X.PNG", vec![1, 2, 3]) else {
             panic!("png is an image")
         };
