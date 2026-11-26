@@ -52,7 +52,7 @@ function Dialog() {
         className="flex h-fit max-h-[84vh] w-[min(620px,92vw)] flex-col overflow-hidden rounded-xl border border-line bg-surface shadow-2xl shadow-black/50 motion-safe:animate-palette-in"
       >
         <header className="flex h-12 shrink-0 items-center border-line border-b pr-2 pl-5">
-          <h2 id="settings-title" className="font-medium text-[14px]">
+          <h2 id="settings-title" className="font-medium text-sm">
             {t("settings")}
           </h2>
           <button
@@ -98,7 +98,7 @@ function Field({ label, children }: { label: string; children: ReactNode }) {
 }
 
 const control =
-  "h-8 rounded-md border border-line bg-canvas px-2 text-[13px] text-fg outline-none focus-visible:border-primary";
+  "h-8 rounded-md border border-line bg-canvas px-2 text-body text-fg outline-none focus-visible:border-primary";
 
 function Appearance() {
   const { theme, custom } = useSettings();
@@ -146,7 +146,7 @@ function Appearance() {
               {t("import")}
             </button>
             {message && (
-              <p role="status" className={message.ok ? "text-fg-muted" : "text-red-500"}>
+              <p role="status" className={message.ok ? "text-fg-muted" : "text-danger"}>
                 {message.text}
               </p>
             )}
@@ -310,7 +310,7 @@ function ShellSection() {
           ))}
         </select>
       </Field>
-      {error && <p className="text-red-500">{error}</p>}
+      {error && <p className="text-danger">{error}</p>}
     </Section>
   );
 }
@@ -345,7 +345,7 @@ function AgentsSection() {
         />
       </Field>
       <p className="text-2xs text-fg-subtle">{t("claudeIntegrationHint")}</p>
-      {error && <p className="text-red-500">{error}</p>}
+      {error && <p className="text-danger">{error}</p>}
     </Section>
   );
 }

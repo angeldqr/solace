@@ -20,7 +20,7 @@ export function Sidebar() {
         className={`flex h-11 shrink-0 items-center gap-2 ${IS_MAC ? "pr-4 pl-20" : "px-4"}`}
       >
         <img src="/solace.svg" alt="" className="pointer-events-none size-5" />
-        <span className="pointer-events-none font-semibold text-[13px] tracking-tight">Solace</span>
+        <span className="pointer-events-none font-semibold text-body tracking-tight">Solace</span>
       </div>
       <SectionHeader title={t("spaces")}>
         <IconButton label={t("openFolder")} onClick={openFolder}>
@@ -83,7 +83,7 @@ function SpaceRow({ space, active, branch }: { space: Space; active: boolean; br
       >
         <span
           aria-hidden
-          className="grid size-5 shrink-0 place-items-center rounded-[5px] font-semibold text-[11px] text-white"
+          className="grid size-5 shrink-0 place-items-center rounded-[5px] font-semibold text-2xs text-white"
           style={{ background: `oklch(0.52 0.13 ${HUES[space.id % HUES.length]})` }}
         >
           {space.name.charAt(0).toUpperCase()}

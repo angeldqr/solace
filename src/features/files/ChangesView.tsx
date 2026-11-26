@@ -5,13 +5,13 @@ import { api, type Change, type SpaceId } from "../../shared/ipc";
 import { useOnDisk } from "./useOnDisk";
 
 const STATUS_COLOR: Record<string, string> = {
-  M: "text-amber-500",
-  A: "text-emerald-500",
-  U: "text-emerald-500",
-  D: "text-red-500",
-  R: "text-sky-500",
-  "!": "text-red-500",
-  C: "text-sky-500",
+  M: "text-warning",
+  A: "text-success",
+  U: "text-success",
+  D: "text-danger",
+  R: "text-info",
+  "!": "text-danger",
+  C: "text-info",
 };
 
 /** Long diffs are cut here; the full file is one double-click away in the editor. */
@@ -35,10 +35,8 @@ export function ChangesView({ space }: { space: SpaceId }) {
     <div className="flex flex-col">
       <p className="flex h-8 items-center gap-2 px-3 text-2xs text-fg-subtle">
         {t("changeCount", { n: changes.length })}
-        <span className="ml-auto text-emerald-500 tabular-nums light:text-emerald-700">
-          +{added}
-        </span>
-        <span className="text-red-500 tabular-nums light:text-red-700">−{removed}</span>
+        <span className="ml-auto text-success tabular-nums">+{added}</span>
+        <span className="text-danger tabular-nums">−{removed}</span>
       </p>
       {changes.map((change) => (
         <button
@@ -58,8 +56,8 @@ export function ChangesView({ space }: { space: SpaceId }) {
           </span>
           {change.additions !== null && (
             <span className="ml-auto shrink-0 text-2xs tabular-nums">
-              <span className="text-emerald-500 light:text-emerald-700">+{change.additions}</span>{" "}
-              <span className="text-red-500 light:text-red-700">−{change.deletions ?? 0}</span>
+              <span className="text-success">+{change.additions}</span>{" "}
+              <span className="text-danger">−{change.deletions ?? 0}</span>
             </span>
           )}
         </button>
@@ -125,9 +123,9 @@ function lineColor(line: string) {
   if (line.startsWith("+++") || line.startsWith("---") || line.startsWith("diff ")) {
     return "text-fg-subtle";
   }
-  if (line.startsWith("+")) return "bg-emerald-500/10 text-emerald-500 light:text-emerald-800";
-  if (line.startsWith("-")) return "bg-red-500/10 text-red-500 light:text-red-800";
-  if (line.startsWith("@@")) return "text-sky-500";
+  if (line.startsWith("+")) return "bg-success/10 text-success";
+  if (line.startsWith("-")) return "bg-danger/10 text-danger";
+  if (line.startsWith("@@")) return "text-info";
   return "text-fg-muted";
 }
 

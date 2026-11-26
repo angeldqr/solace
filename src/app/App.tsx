@@ -155,7 +155,7 @@ function EmptyState(props: {
     <div className="flex h-full flex-col items-center justify-center gap-5 pb-11 text-center">
       <img src="/solace.svg" alt="" className="size-14" />
       <div className="space-y-1.5">
-        <h1 className="font-medium text-[17px] text-fg tracking-tight">{props.title}</h1>
+        <h1 className="font-medium text-lg text-fg tracking-tight">{props.title}</h1>
         {props.body && <p className="max-w-sm text-fg-muted leading-relaxed">{props.body}</p>}
       </div>
       <button

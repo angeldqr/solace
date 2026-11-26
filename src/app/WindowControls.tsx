@@ -41,7 +41,7 @@ function WindowButton({
       title={label}
       onClick={() => void onClick()}
       className={`grid h-full w-[46px] place-items-center text-fg-muted transition-colors duration-100 ${
-        danger ? "hover:bg-[#c42b1c] hover:text-white" : "hover:bg-hover hover:text-fg"
+        danger ? "hover:bg-close hover:text-white" : "hover:bg-hover hover:text-fg"
       }`}
     >
       {children}

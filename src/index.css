@@ -21,11 +21,19 @@
   --color-primary-soft: oklch(0.82 0.08 264);
   --color-on-primary: #ffffff;
   --color-pane: #0a0a0b;
+  --color-success: var(--color-emerald-400);
+  --color-warning: var(--color-amber-400);
+  --color-danger: var(--color-red-400);
+  --color-info: var(--color-sky-400);
+  --color-close: #c42b1c; /* Windows caption close hover */
 
-  --text-2xs: 11px;
+  --text-2xs: 0.6875rem;
+  --text-2xs--line-height: 1rem;
+  --text-body: 0.8125rem;
+  --text-body--line-height: 1.25rem;
   --ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);
 
-  --animate-fade-in: fade-in 120ms ease-out;
+  --animate-fade-in: fade-in 160ms ease-out;
   --animate-palette-in: palette-in 180ms var(--ease-drawer);
 
   @keyframes fade-in {
@@ -41,6 +49,25 @@
   }
 }
 
+:root[data-theme="light"] {
+  --color-success: var(--color-emerald-700);
+  --color-warning: var(--color-amber-700);
+  --color-danger: var(--color-red-700);
+  --color-info: var(--color-sky-700);
+}
+
+:root {
+  --glass-opacity: 80%;
+}
+@utility glass {
+  background: color-mix(in oklab, var(--color-surface) var(--glass-opacity), transparent);
+  backdrop-filter: blur(16px) saturate(1.1);
+}
+@utility backdrop-dim {
+  background: rgb(0 0 0 / 45%);
+  backdrop-filter: blur(3px);
+}
+
 @layer base {
   html,
   body,
@@ -49,15 +76,34 @@
   }
   body {
     @apply bg-canvas font-sans text-fg antialiased;
-    font-size: 13px;
+    font-size: var(--text-body);
+    line-height: var(--text-body--line-height);
     user-select: none;
   }
   * {
     scrollbar-width: thin;
     scrollbar-color: var(--color-line-strong) transparent;
   }
+  svg.lucide[stroke-width="2"] {
+    stroke-width: 1.75;
+  }
+  ::selection {
+    background: color-mix(in oklab, var(--color-primary) 35%, transparent);
+  }
   :focus-visible {
     outline: 2px solid var(--color-primary);
     outline-offset: 2px;
   }
 }
+
+/* biome-ignore-start lint/complexity/noImportantStyles: reduced motion must beat every utility */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  ::before,
+  ::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+/* biome-ignore-end lint/complexity/noImportantStyles: reduced motion must beat every utility */

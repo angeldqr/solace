@@ -11,8 +11,8 @@ export function StatusDot({ status }: { status: AgentStatus }) {
     );
   }
   const color = {
-    blocked: "bg-amber-400 motion-safe:animate-pulse",
-    done: "bg-emerald-400",
+    blocked: "bg-warning motion-safe:animate-pulse",
+    done: "bg-success",
     idle: "bg-fg-subtle/60",
   }[status];
   return <span aria-hidden className={`size-2 shrink-0 rounded-full ${color}`} />;

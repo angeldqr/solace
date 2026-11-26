@@ -61,7 +61,7 @@ function PaletteDialog() {
             onKeyDown={onKeyDown}
             placeholder={t("searchCommands")}
             aria-label={t("searchCommands")}
-            className="h-11 flex-1 bg-transparent text-[13px] text-fg outline-none placeholder:text-fg-subtle"
+            className="h-11 flex-1 bg-transparent text-body text-fg outline-none placeholder:text-fg-subtle"
           />
         </div>
         <div role="listbox" aria-label={t("commands")} className="max-h-80 overflow-y-auto p-1.5">

@@ -12,6 +12,7 @@ import { startAgents } from "./shared/agents";
 import { locale } from "./shared/i18n";
 import { api } from "./shared/ipc";
 import { current, startSession } from "./shared/session";
+import { TooltipProvider } from "./shared/ui/Tooltip";
 
 document.documentElement.lang = locale;
 // Notifications are sent by the backend; they should speak the UI's language.
@@ -28,6 +29,8 @@ if (!root) throw new Error("#root element missing from index.html");
 
 createRoot(root).render(
   <StrictMode>
-    <App />
+    <TooltipProvider delay={400}>
+      <App />
+    </TooltipProvider>
   </StrictMode>,
 );
