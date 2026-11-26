@@ -109,11 +109,41 @@ fn bundled_cli(app: &tauri::AppHandle) -> Result<PathBuf, String> {
     }))
 }
 
+/// The `solace` CLI the hooks run. An AppImage's files live in a mount that vanishes when the app
+/// quits, under a /tmp name other users can see and recreate, so there the CLI is copied first to
+/// a folder only this user can write to.
+fn hook_cli(app: &tauri::AppHandle) -> Result<PathBuf, String> {
+    let cli = bundled_cli(app)?;
+    #[cfg(target_os = "linux")]
+    if std::env::var_os("APPIMAGE").is_some() {
+        use std::os::unix::fs::{DirBuilderExt, PermissionsExt};
+        use tauri::Manager;
+        let dir = app
+            .path()
+            .app_local_data_dir()
+            .map_err(|e| e.to_string())?
+            .join("bin");
+        let err = |e: std::io::Error| e.to_string();
+        std::fs::DirBuilder::new()
+            .recursive(true)
+            .mode(0o700)
+            .create(&dir)
+            .map_err(err)?;
+        let (copy, partial) = (dir.join("solace"), dir.join("solace.partial"));
+        std::fs::copy(&cli, &partial).map_err(err)?;
+        std::fs::set_permissions(&partial, std::fs::Permissions::from_mode(0o700)).map_err(err)?;
+        // A rename replaces the old copy even while a hook is running it.
+        std::fs::rename(&partial, &copy).map_err(err)?;
+        return Ok(copy);
+    }
+    Ok(cli)
+}
+
 #[tauri::command(async)]
 pub fn claude_integration_set(app: tauri::AppHandle, enabled: bool) -> Result<(), String> {
     let paths = claude_paths()?;
     let result = if enabled {
-        solace_infra::integrations::install_claude(&paths, &bundled_cli(&app)?)
+        solace_infra::integrations::install_claude(&paths, &hook_cli(&app)?)
     } else {
         solace_infra::integrations::uninstall_claude(&paths)
     };
@@ -126,10 +156,12 @@ pub fn refresh_claude_integration(app: &tauri::AppHandle) {
     if cfg!(debug_assertions) {
         return;
     }
-    let (Ok(paths), Ok(exe)) = (claude_paths(), bundled_cli(app)) else {
+    let Ok(paths) = claude_paths() else {
         return;
     };
-    if solace_infra::integrations::claude_installed(&paths) {
+    if solace_infra::integrations::claude_installed(&paths)
+        && let Ok(exe) = hook_cli(app)
+    {
         let _ = solace_infra::integrations::install_claude(&paths, &exe);
     }
 }

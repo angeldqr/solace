@@ -37,7 +37,7 @@ const manifest = {
     "windows-x86_64": nsis,
     "windows-x86_64-nsis": nsis,
     "windows-x86_64-msi": msi,
-    "linux-x86_64": appImage,
+    // No plain linux key: a .deb install would fall back to it and fetch an AppImage it can't use.
     "linux-x86_64-appimage": appImage,
     "darwin-aarch64": app,
     "darwin-aarch64-app": app,

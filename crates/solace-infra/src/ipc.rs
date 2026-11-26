@@ -25,9 +25,10 @@ pub fn endpoint(nonce: u64) -> String {
             .unwrap_or_else(std::env::temp_dir);
         // SAFETY: getuid has no preconditions and cannot fail.
         let uid = unsafe { libc::getuid() };
+        // Random, so another user can't claim the folder first (in /tmp, without XDG_RUNTIME_DIR).
         let socket = base
-            .join(format!("solace-{uid}"))
-            .join(format!("{nonce:016x}.sock"));
+            .join(format!("solace-{uid}-{nonce:016x}"))
+            .join("api.sock");
         socket.to_string_lossy().into_owned()
     }
 }
@@ -67,17 +68,15 @@ pub fn serve(
     Ok(())
 }
 
-/// Creates the socket's folder for this user alone, and refuses one that someone else could enter.
+/// Creates the socket's folder for this user alone; one that already exists is refused, since
+/// someone else may have made it.
 #[cfg(unix)]
 fn private_folder(socket: &std::path::Path) -> io::Result<()> {
     use std::os::unix::fs::{DirBuilderExt, MetadataExt, PermissionsExt};
     let dir = socket
         .parent()
         .ok_or_else(|| io::Error::other("the socket path has no folder"))?;
-    match std::fs::DirBuilder::new().mode(0o700).create(dir) {
-        Err(err) if err.kind() == io::ErrorKind::AlreadyExists => {}
-        other => other?,
-    }
+    std::fs::DirBuilder::new().mode(0o700).create(dir)?;
     let meta = std::fs::symlink_metadata(dir)?;
     // SAFETY: getuid has no preconditions and cannot fail.
     let uid = unsafe { libc::getuid() };
@@ -139,14 +138,17 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
-    fn refuses_a_socket_folder_others_can_enter() {
+    fn makes_a_new_private_socket_folder_and_refuses_an_existing_one() {
         use std::os::unix::fs::PermissionsExt;
-        let dir = std::env::temp_dir().join(format!("solace-open-{}", std::process::id()));
-        std::fs::create_dir_all(&dir).unwrap();
-        std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o755)).unwrap();
-        assert!(private_folder(&dir.join("x.sock")).is_err());
-        std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o700)).unwrap();
+        let dir = std::env::temp_dir().join(format!("solace-private-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
         assert!(private_folder(&dir.join("x.sock")).is_ok());
+        let mode = std::fs::metadata(&dir).unwrap().permissions().mode();
+        assert_eq!(mode & 0o777, 0o700);
+        assert!(
+            private_folder(&dir.join("x.sock")).is_err(),
+            "made before us"
+        );
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

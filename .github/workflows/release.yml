@@ -7,19 +7,22 @@ on:
   # A manual run builds every platform without releasing anything, to try the bundles out.
   workflow_dispatch:
 
+# Build jobs run third-party code (npm, cargo build scripts, bundler tools): they only read.
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   windows:
     runs-on: windows-latest
     env:
       # Signing happens only once SignPath is set up (docs/code-signing.md).
-      SIGN: ${{ vars.SIGNPATH_ORGANIZATION_ID != '' }}
-    # The updater key is given only to the two steps that sign updates, never to install, test or
-    # build steps where a compromised dependency could read it.
+      SIGN: ${{ vars.SIGNPATH_ORGANIZATION_ID != '' && github.ref_type == 'tag' }}
+    # The updater key is given only to the step that signs updates, which runs nothing but the
+    # Tauri CLI: never to install, test, build or bundle steps (bundling downloads tools).
     steps:
       - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
       - name: Tag must match the workspace version
         id: version
         shell: bash
@@ -77,10 +80,12 @@ jobs:
         shell: bash
         run: cp signed/programs/solace.exe src-tauri/binaries/solace.exe
 
-      - run: pnpm tauri bundle
-        env:
-          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+      # Update signatures are made in their own step below, without the bundler around.
+      - name: Bundle
+        shell: bash
+        run: |
+          echo '{"bundle":{"createUpdaterArtifacts":false}}' > "$RUNNER_TEMP/no-updater.json"
+          pnpm tauri bundle -c "$RUNNER_TEMP/no-updater.json"
       - name: Collect installers to sign
         if: env.SIGN == 'true'
         shell: bash
@@ -104,16 +109,19 @@ jobs:
           github-artifact-id: ${{ steps.installers.outputs.artifact-id }}
           output-artifact-directory: signed/installers
           wait-for-completion-timeout-in-seconds: 3600
-      - name: Use the signed installers and re-sign them for the updater
+      - name: Use the signed installers
         if: env.SIGN == 'true'
+        shell: bash
+        run: |
+          cp signed/installers/*-setup.exe target/release/bundle/nsis/
+          cp signed/installers/*.msi target/release/bundle/msi/
+      # After Authenticode, which changes the bytes the updater signature covers.
+      - name: Sign the update bundles
         shell: bash
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         run: |
-          cp signed/installers/*-setup.exe target/release/bundle/nsis/
-          cp signed/installers/*.msi target/release/bundle/msi/
-          # Authenticode changed the bytes, so the updater signatures must be made again.
           for f in target/release/bundle/nsis/*-setup.exe target/release/bundle/msi/*.msi; do
             pnpm tauri signer sign "$f"
           done
@@ -143,6 +151,8 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
       - name: Version
         id: version
         run: echo "version=$(grep -m1 '^version' Cargo.toml | cut -d'"' -f2)" >> "$GITHUB_OUTPUT"
@@ -162,25 +172,32 @@ jobs:
       - run: node scripts/build-cli.mjs
       - run: cargo test --locked --workspace
       - run: pnpm tauri build --no-bundle
-      # As on Windows, only the bundling step sees the updater key.
-      - run: pnpm tauri bundle
-        env:
-          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+      # As on Windows, the updater key only reaches the signing step, not the bundler (which
+      # downloads tools such as linuxdeploy).
+      - name: Bundle
+        run: |
+          echo '{"bundle":{"createUpdaterArtifacts":false}}' > "$RUNNER_TEMP/no-updater.json"
+          pnpm tauri bundle -c "$RUNNER_TEMP/no-updater.json"
       - name: Collect the release files
         env:
           VERSION: ${{ steps.version.outputs.version }}
         run: |
           mkdir release
           if [ "$RUNNER_OS" = Linux ]; then
-            cp target/release/bundle/appimage/*.AppImage target/release/bundle/appimage/*.AppImage.sig \
-              target/release/bundle/deb/*.deb release/
+            cp target/release/bundle/appimage/*.AppImage target/release/bundle/deb/*.deb release/
           else
             cp target/release/bundle/dmg/*.dmg release/
-            # The updater bundle has no version in its name; every release needs a distinct one.
-            cp target/release/bundle/macos/Solace.app.tar.gz "release/Solace_${VERSION}_aarch64.app.tar.gz"
-            cp target/release/bundle/macos/Solace.app.tar.gz.sig "release/Solace_${VERSION}_aarch64.app.tar.gz.sig"
+            # The macOS update bundle is the app, gzipped; versioned so each release's is distinct.
+            tar -czf "release/Solace_${VERSION}_aarch64.app.tar.gz" -C target/release/bundle/macos Solace.app
           fi
+      - name: Sign the update bundles
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: |
+          for f in release/*.AppImage release/*.app.tar.gz; do
+            [ -e "$f" ] && pnpm tauri signer sign "$f"
+          done
       - uses: actions/upload-artifact@v7
         with:
           name: release-${{ matrix.name }}
@@ -190,8 +207,12 @@ jobs:
     needs: [windows, unix]
     if: github.ref_type == 'tag'
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
       - uses: actions/download-artifact@v8
         with:
           pattern: release-*
