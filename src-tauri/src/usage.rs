@@ -91,6 +91,24 @@ pub fn view(state: &AppState) -> UsageView {
     }
 }
 
+/// How full a provider's fullest limit is, ignoring windows that have already reset. `None`
+/// when nothing is known (and always for agents whose usage Solace doesn't read).
+pub fn used_percent(state: &AppState, kind: &str) -> Option<f64> {
+    let usage = match kind {
+        "claude" => &state.usage.claude,
+        "codex" => &state.usage.codex,
+        _ => return None,
+    };
+    let now = now_secs();
+    usage
+        .as_ref()?
+        .limits
+        .iter()
+        .filter(|l| l.resets_at.is_none_or(|at| at > now))
+        .map(|l| l.used_percent)
+        .reduce(f64::max)
+}
+
 #[tauri::command]
 pub fn usage_get(state: State<Shared>) -> UsageView {
     view(&state.lock().unwrap())

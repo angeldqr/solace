@@ -3,6 +3,7 @@
 .agents/
 .mcp.json
 skills-lock.json
+.antigravitycli/
 .env*
 *.key
 *.pem

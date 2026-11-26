@@ -3,6 +3,7 @@
 
 use serde::{Deserialize, Serialize};
 
+use crate::tasks::TaskSpec;
 use crate::terminals::{Direction, PaneId};
 
 /// Pipe (Windows) or socket name. Unique per launch: a fixed name could be claimed first by
@@ -64,6 +65,43 @@ pub enum Request {
         session: String,
         state: Option<crate::agents::AgentState>,
     },
+    /// Starts one worker agent per task, each in its own git worktree and pane.
+    #[serde(rename = "tasks.start")]
+    TasksStart {
+        from: Option<PaneId>,
+        /// Folder the CLI ran in; the lead pane's folder when absent.
+        cwd: Option<std::path::PathBuf>,
+        /// Agent kind for tasks that name none, or "auto" for the one with the most room left.
+        kind: Option<String>,
+        /// Allow a folder that is not a git repository: the workers then edit it together.
+        #[serde(default)]
+        shared: bool,
+        tasks: Vec<TaskSpec>,
+    },
+    /// Waits until every task of a batch (default: this pane's newest) is finished.
+    #[serde(rename = "tasks.wait")]
+    TasksWait {
+        batch: Option<String>,
+        from: Option<PaneId>,
+        timeout_secs: u64,
+    },
+    /// Closes a batch's panes and removes its worktrees; the branches stay.
+    #[serde(rename = "tasks.clean")]
+    TasksClean {
+        batch: String,
+        force: bool,
+        /// The pane that asked: never closed by the clean-up.
+        #[serde(default)]
+        from: Option<PaneId>,
+    },
+    /// From a worker: its task is finished.
+    #[serde(rename = "task.done")]
+    TaskDone {
+        task: String,
+        pane: Option<PaneId>,
+        summary: String,
+        failed: bool,
+    },
     /// From Claude Code's status line: the raw status JSON, which carries the rate limits.
     #[serde(rename = "usage.report")]
     UsageReport {
@@ -99,5 +137,43 @@ mod tests {
                 ..
             }
         ));
+    }
+
+    #[test]
+    fn task_requests_round_trip() {
+        let start = Request::TasksStart {
+            from: Some(PaneId(1)),
+            cwd: Some("C:/repo".into()),
+            kind: Some("auto".into()),
+            shared: false,
+            tasks: vec![TaskSpec {
+                title: "t".into(),
+                prompt: "p".into(),
+                kind: None,
+            }],
+        };
+        let json = serde_json::to_string(&start).unwrap();
+        assert!(json.contains(r#""method":"tasks.start""#), "{json}");
+        let Request::TasksStart { tasks, cwd, .. } = serde_json::from_str(&json).unwrap() else {
+            panic!("not tasks.start");
+        };
+        assert_eq!((tasks.len(), cwd), (1, Some("C:/repo".into())));
+        for (json, ok) in [
+            (
+                r#"{"method":"tasks.wait","params":{"batch":null,"from":2,"timeout_secs":0}}"#,
+                true,
+            ),
+            (
+                r#"{"method":"tasks.clean","params":{"batch":"b1","force":false}}"#,
+                true,
+            ),
+            (
+                r#"{"method":"task.done","params":{"task":"b1-1","pane":null,"summary":"s","failed":true}}"#,
+                true,
+            ),
+            (r#"{"method":"task.done","params":{"task":"b1-1"}}"#, false),
+        ] {
+            assert_eq!(serde_json::from_str::<Request>(json).is_ok(), ok, "{json}");
+        }
     }
 }

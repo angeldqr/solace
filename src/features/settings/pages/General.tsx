@@ -34,6 +34,7 @@ export function General() {
         </Card>
       </Section>
       <Notifications />
+      <Presence />
       <Section title={t("updates")}>
         <Card>
           <Row title={t("checkUpdates")} description={t("privacyNote")}>
@@ -46,6 +47,31 @@ export function General() {
         </Card>
       </Section>
     </>
+  );
+}
+
+function Presence() {
+  const enabled = useSettings((s) => s.discordPresence);
+  const [available, setAvailable] = useState(false);
+  useEffect(() => {
+    void api
+      .presenceAvailable()
+      .then(setAvailable)
+      .catch(() => {});
+  }, []);
+  if (!available) return null;
+  return (
+    <Section title="Discord">
+      <Card>
+        <Row title={t("discordPresence")} description={t("discordPresenceHint")}>
+          <Switch
+            checked={enabled}
+            label={t("discordPresence")}
+            onCheckedChange={(value) => updateSettings({ discordPresence: value })}
+          />
+        </Row>
+      </Card>
+    </Section>
   );
 }
 

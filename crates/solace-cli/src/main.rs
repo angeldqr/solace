@@ -1,4 +1,4 @@
-use std::io::{BufRead, BufReader, Read, Write};
+use std::io::{BufRead, BufReader, IsTerminal, Read, Write};
 use std::path::PathBuf;
 use std::process::ExitCode;
 
@@ -6,6 +6,7 @@ use clap::{Parser, Subcommand};
 use interprocess::local_socket::{Stream, prelude::*};
 use solace_core::agents::hooks::{HookVerdict, claude_hook};
 use solace_core::orchestration::{Request, Response};
+use solace_core::tasks::TaskSpec;
 use solace_core::terminals::{Direction, PaneId};
 
 const SKILL: &str = include_str!("../../../skills/solace/SKILL.md");
@@ -26,6 +27,12 @@ enum Command {
     /// Agents: start, prompt, wait for and list.
     #[command(subcommand)]
     Agent(AgentCommand),
+    /// Parallel tasks: start a batch of worker agents, wait for them, clean up.
+    #[command(subcommand)]
+    Tasks(TasksCommand),
+    /// For a worker agent: report that its task is finished.
+    #[command(subcommand)]
+    Task(TaskCommand),
     /// Print the agent skill, or install it for Claude Code with `solace skill install`.
     Skill { action: Option<String> },
     /// Called by Claude Code's hooks with the event on stdin; reports the agent's exact state.
@@ -111,6 +118,85 @@ enum AgentCommand {
     List,
 }
 
+#[derive(Subcommand)]
+enum TasksCommand {
+    /// Start one worker agent per task (a JSON array of {title, prompt, kind?}, on stdin or in
+    /// --file), each in its own git worktree and pane.
+    Start {
+        /// An agent kind, or "auto" for the one with the most room left in its usage limits.
+        /// Default: the kind of the agent running this command.
+        #[arg(long)]
+        kind: Option<String>,
+        /// Read the tasks from a UTF-8 file instead of stdin (PowerShell 5.1 mangles piped text).
+        #[arg(long)]
+        file: Option<PathBuf>,
+        /// Allow a folder that is not a git repository: the workers then edit it together.
+        #[arg(long)]
+        shared: bool,
+    },
+    /// Wait until every task of a batch is finished (default batch: your newest).
+    Wait {
+        batch: Option<String>,
+        /// Seconds; the default stays under the 2-minute limit agents' shell tools usually have.
+        #[arg(long, default_value_t = 110)]
+        timeout: u64,
+    },
+    /// Show where the tasks of a batch stand, without waiting.
+    List { batch: Option<String> },
+    /// Close a batch's panes and remove its worktrees; branches are kept.
+    Clean {
+        batch: String,
+        /// Remove worktrees even with uncommitted changes.
+        #[arg(long)]
+        force: bool,
+    },
+}
+
+#[derive(Subcommand)]
+enum TaskCommand {
+    /// Report the result of your task (commit your work first).
+    Done {
+        #[arg(long, conflicts_with = "summary_file")]
+        summary: Option<String>,
+        /// Read the summary from a UTF-8 file: for long ones, or ones with quotes.
+        #[arg(long)]
+        summary_file: Option<PathBuf>,
+        /// You could not finish; the summary says why.
+        #[arg(long)]
+        failed: bool,
+    },
+}
+
+/// The tasks for `tasks start`: from the file, else from piped stdin.
+fn read_tasks(file: Option<PathBuf>) -> Result<Vec<TaskSpec>, String> {
+    let mut bytes = Vec::new();
+    match file {
+        Some(path) => {
+            bytes = std::fs::read(&path).map_err(|e| format!("{}: {e}", path.display()))?;
+        }
+        None => {
+            if std::io::stdin().is_terminal() {
+                return Err("give the tasks as a JSON array on stdin or with --file".into());
+            }
+            std::io::stdin()
+                .take(4 * 1024 * 1024)
+                .read_to_end(&mut bytes)
+                .map_err(|e| e.to_string())?;
+        }
+    }
+    let text = String::from_utf8(bytes).map_err(|_| "the tasks must be UTF-8 text")?;
+    serde_json::from_str(text.trim_start_matches('\u{feff}')).map_err(|e| {
+        format!("the tasks must be a JSON array of {{\"title\", \"prompt\", \"kind\"?}}: {e}")
+    })
+}
+
+fn task_env() -> Result<String, String> {
+    std::env::var("SOLACE_TASK_ID")
+        .ok()
+        .filter(|id| !id.is_empty())
+        .ok_or_else(|| "SOLACE_TASK_ID is not set: only a task's worker can run this".into())
+}
+
 fn caller_pane() -> Option<PaneId> {
     std::env::var("SOLACE_PANE_ID")
         .ok()?
@@ -173,6 +259,49 @@ fn request(command: Command) -> Result<Request, String> {
             timeout_secs: timeout,
         },
         Command::Agent(AgentCommand::List) => Request::AgentList,
+        Command::Tasks(TasksCommand::Start { kind, file, shared }) => Request::TasksStart {
+            from: caller_pane(),
+            cwd: std::env::current_dir().ok(),
+            kind,
+            shared,
+            tasks: read_tasks(file)?,
+        },
+        Command::Tasks(TasksCommand::Wait { batch, timeout }) => Request::TasksWait {
+            batch,
+            from: caller_pane(),
+            timeout_secs: timeout,
+        },
+        Command::Tasks(TasksCommand::List { batch }) => Request::TasksWait {
+            batch,
+            from: caller_pane(),
+            timeout_secs: 0,
+        },
+        Command::Tasks(TasksCommand::Clean { batch, force }) => Request::TasksClean {
+            batch,
+            force,
+            from: caller_pane(),
+        },
+        Command::Task(TaskCommand::Done {
+            summary,
+            summary_file,
+            failed,
+        }) => Request::TaskDone {
+            task: task_env()?,
+            pane: caller_pane(),
+            summary: match (summary, summary_file) {
+                (Some(text), _) => text,
+                (None, Some(path)) => {
+                    let bytes =
+                        std::fs::read(&path).map_err(|e| format!("{}: {e}", path.display()))?;
+                    String::from_utf8(bytes)
+                        .map_err(|_| "the summary file must be UTF-8 text")?
+                        .trim_start_matches('\u{feff}')
+                        .to_string()
+                }
+                (None, None) => return Err("give --summary or --summary-file".into()),
+            },
+            failed,
+        },
         Command::Skill { .. } | Command::Hook { .. } | Command::Statusline { .. } => {
             return Err("not a request".into());
         }
@@ -213,11 +342,16 @@ fn install_skill() -> Result<serde_json::Value, String> {
     let home = std::env::var_os("USERPROFILE")
         .or_else(|| std::env::var_os("HOME"))
         .ok_or("no home directory")?;
-    let dir = PathBuf::from(home).join(".claude/skills/solace");
-    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
-    let path = dir.join("SKILL.md");
-    std::fs::write(&path, SKILL).map_err(|e| e.to_string())?;
-    Ok(serde_json::json!({ "installed": path }))
+    // Codex and several other agents read ~/.agents/skills.
+    let mut installed = Vec::new();
+    for folder in [".claude/skills/solace", ".agents/skills/solace"] {
+        let dir = PathBuf::from(&home).join(folder);
+        std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+        let path = dir.join("SKILL.md");
+        std::fs::write(&path, SKILL).map_err(|e| e.to_string())?;
+        installed.push(path);
+    }
+    Ok(serde_json::json!({ "installed": installed }))
 }
 
 /// Hooks must never get in Claude Code's way: outside Solace, or on any error, this does nothing
@@ -285,6 +419,8 @@ fn main() -> ExitCode {
         _ => {}
     }
     let command = Cli::parse().command;
+    // `tasks list` only looks: unfinished tasks are no reason to fail.
+    let is_list = matches!(command, Command::Tasks(TasksCommand::List { .. }));
     let result = match command {
         Command::Skill { action: None } => {
             print!("{SKILL}");
@@ -302,7 +438,21 @@ fn main() -> ExitCode {
                 "{}",
                 serde_json::to_string_pretty(&value).unwrap_or_default()
             );
-            ExitCode::SUCCESS
+            let timed_out =
+                value.get("timedOut").and_then(serde_json::Value::as_bool) == Some(true);
+            let unclean = value
+                .get("failed")
+                .and_then(serde_json::Value::as_array)
+                .is_some_and(|f| !f.is_empty());
+            // A wait that gave up: the agent must run it again.
+            if timed_out && !is_list {
+                ExitCode::from(2)
+            } else if unclean {
+                // `tasks clean` could not remove everything.
+                ExitCode::FAILURE
+            } else {
+                ExitCode::SUCCESS
+            }
         }
         Err(message) => {
             eprintln!("solace: {message}");

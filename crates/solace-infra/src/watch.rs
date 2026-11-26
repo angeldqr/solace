@@ -28,6 +28,10 @@ pub fn watch(
                     .file_name()
                     .is_some_and(|n| n == "HEAD" || n == "index");
             };
+            // Worktrees of parallel tasks live here: their churn is not the user's.
+            if rel.starts_with(".solace") {
+                return false;
+            }
             git_state_changed(rel)
                 || (!inside_git_dir(rel)
                     && !ignored.matched_path_or_any_parents(rel, false).is_ignore())
@@ -86,6 +90,8 @@ mod tests {
             !git_state_changed(Path::new("docs/index")),
             "a file named index is not git's"
         );
+        assert!(Path::new(".solace/worktrees/b1-1/a.rs").starts_with(".solace"));
+        assert!(!Path::new(".solaceignore").starts_with(".solace"));
         assert!(inside_git_dir(Path::new(".git/objects/ab")));
         assert!(!inside_git_dir(Path::new("src/.gitignore")));
     }

@@ -218,6 +218,21 @@ const en = {
   ignoreWhitespace: "Ignore whitespace changes",
   ignoreWhitespaceHint: "Hides lines that only differ in spaces or tabs.",
   diffSwatch: "Added and removed line colours",
+  discordPresence: "Show activity in Discord",
+  discordPresenceHint:
+    "Shows which coding agent you're using (never folder or project names). Discord must be open.",
+  presenceCodingWith: "Coding with {agent}",
+  presenceInSolace: "In the terminal",
+  presenceAgentWorking: "1 agent working",
+  presenceAgentsWorking: "{n} agents working",
+  tasksBatch: "Tasks · {batch}",
+  tasksCleanUp: "Clean up",
+  tasksConfirmCleanUp: "Remove worktrees?",
+  tasksCleanUpHint: "Closes the panes and removes the worktrees. The branches are kept.",
+  taskFailed: "Failed",
+  taskClosed: "Closed before finishing",
+  taskShowSummary: "Show summary",
+  taskHideSummary: "Hide summary",
 };
 
 type Messages = typeof en;
@@ -445,6 +460,21 @@ const es: Messages = {
   ignoreWhitespace: "Ignorar cambios de espacios",
   ignoreWhitespaceHint: "Oculta las líneas que solo cambian en espacios o tabulaciones.",
   diffSwatch: "Colores de líneas añadidas y eliminadas",
+  discordPresence: "Mostrar actividad en Discord",
+  discordPresenceHint:
+    "Muestra qué agente de programación usas (nunca nombres de carpetas ni proyectos). Discord debe estar abierto.",
+  presenceCodingWith: "Programando con {agent}",
+  presenceInSolace: "En la terminal",
+  presenceAgentWorking: "1 agente trabajando",
+  presenceAgentsWorking: "{n} agentes trabajando",
+  tasksBatch: "Tareas · {batch}",
+  tasksCleanUp: "Limpiar",
+  tasksConfirmCleanUp: "¿Eliminar worktrees?",
+  tasksCleanUpHint: "Cierra los paneles y elimina los worktrees. Las ramas se conservan.",
+  taskFailed: "Falló",
+  taskClosed: "Cerrada antes de terminar",
+  taskShowSummary: "Mostrar resumen",
+  taskHideSummary: "Ocultar resumen",
 };
 
 /** The language picked in settings, else the system's. Changing it reloads the page. */

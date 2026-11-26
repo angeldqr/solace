@@ -119,6 +119,9 @@ pub fn watch(app: AppHandle) {
         if update(&mut state, scanned.then_some(&processes), &mut notices) {
             let _ = app.emit("agents", views(&state));
         }
+        if crate::tasks::observe(&mut state) {
+            let _ = app.emit("tasks", crate::tasks::views(&state));
+        }
         let (enabled, locale) = (state.settings.notifications, state.locale.clone());
         drop(state);
         if enabled && !notices.is_empty() {

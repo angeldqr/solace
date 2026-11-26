@@ -3,7 +3,9 @@ mod commands;
 mod files;
 mod notify;
 mod orchestration;
+mod presence;
 mod settings;
+mod tasks;
 mod usage;
 
 use std::collections::HashMap;
@@ -32,6 +34,8 @@ pub struct AppState {
     /// "en" or "es", reported by the UI.
     locale: String,
     usage: usage::UsageState,
+    /// Parallel task batches started by `solace tasks start`; runtime only.
+    batches: Vec<tasks::Batch>,
 }
 
 /// Where the `solace` CLI reaches this app; fixed for the life of the process.
@@ -94,6 +98,7 @@ pub fn run() {
                 settings_file,
                 locale: "en".into(),
                 usage: Default::default(),
+                batches: Vec::new(),
             }));
             files::sync_watchers(&app.state::<Shared>().lock().unwrap());
             let handle = app.handle().clone();
@@ -115,6 +120,10 @@ pub fn run() {
             commands::session_get,
             commands::agents_get,
             usage::usage_get,
+            tasks::tasks_get,
+            tasks::tasks_clean,
+            presence::presence_available,
+            presence::presence_update,
             commands::space_open,
             commands::space_close,
             commands::space_activate,

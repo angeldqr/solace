@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use serde::Serialize;
 use solace_core::session::Session;
@@ -42,6 +42,10 @@ pub(crate) fn commit(app: &AppHandle, state: &AppState) {
         eprintln!("could not save session: {err}");
     }
     let _ = app.emit("session", view(&state.session));
+    // A task whose pane just went away reads as closed.
+    if !state.batches.is_empty() {
+        let _ = app.emit("tasks", crate::tasks::views(state));
+    }
 }
 
 /// Runs a use case; `None` means an unknown id. Panes it reports as closed get their shells killed.
@@ -175,11 +179,14 @@ pub fn pty_attach(
         pty.set_paused(false);
         return pty.resize(cols, rows).map_err(|e| e.to_string());
     }
-    spawn_shell(&app, &mut state, pane, cols, rows, Some(sink))
+    spawn_shell(&app, &mut state, pane, cols, rows, Some(sink), None, &[])
 }
 
 /// Starts the shell for `pane`. The UI usually does this on first sight, but agents can open
 /// panes nobody is looking at yet; their output is mirrored and repainted when the UI attaches.
+/// `cwd` replaces the space's folder (a task's worktree); `extra_env` adds to the variables
+/// every shell gets.
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn spawn_shell(
     app: &AppHandle,
     state: &mut AppState,
@@ -187,17 +194,22 @@ pub(crate) fn spawn_shell(
     cols: u16,
     rows: u16,
     sink: Option<Output>,
+    cwd: Option<&Path>,
+    extra_env: &[(&str, String)],
 ) -> Result {
-    let cwd = state
-        .session
-        .pane_root(pane)
-        .ok_or("unknown pane")?
-        .to_path_buf();
+    let cwd = match cwd {
+        Some(dir) => dir.to_path_buf(),
+        None => state
+            .session
+            .pane_root(pane)
+            .ok_or("unknown pane")?
+            .to_path_buf(),
+    };
     if !cwd.is_dir() {
         return Err(format!("{} no longer exists", cwd.display()));
     }
     let space = state.session.space_of(pane).ok_or("unknown pane")?;
-    let env = [
+    let mut env = vec![
         ("SOLACE_ENV", "1".to_string()),
         ("SOLACE_PANE_ID", pane.0.to_string()),
         ("SOLACE_SPACE_ID", space.0.to_string()),
@@ -205,6 +217,7 @@ pub(crate) fn spawn_shell(
         // Lets these through to a WSL shell, so `solace.exe` works there too.
         ("WSLENV", wslenv()),
     ];
+    env.extend(extra_env.iter().cloned());
     // The `solace` CLI ships in its own folder so the rest of the install dir (the uninstaller,
     // the app itself) stays off the shell's PATH.
     let bin_dir = app.path().resource_dir().ok().map(|dir| dir.join("bin"));
@@ -225,7 +238,7 @@ pub(crate) fn spawn_shell(
 
 /// The user's WSLENV plus Solace's variables.
 fn wslenv() -> String {
-    const OURS: &str = "SOLACE_ENV:SOLACE_PANE_ID:SOLACE_SPACE_ID:SOLACE_PIPE";
+    const OURS: &str = "SOLACE_ENV:SOLACE_PANE_ID:SOLACE_SPACE_ID:SOLACE_PIPE:SOLACE_TASK_ID";
     match std::env::var("WSLENV") {
         Ok(existing) if !existing.is_empty() => format!("{existing}:{OURS}"),
         _ => OURS.to_string(),

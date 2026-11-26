@@ -6,6 +6,8 @@ import { panesOf, useSession } from "../../shared/session";
 import { AgentIcon } from "../../shared/ui/AgentIcon";
 import { StatusDot } from "../../shared/ui/StatusDot";
 import { formatElapsed, useNow } from "../../shared/useNow";
+import { TaskBoard } from "../tasks/TaskBoard";
+import { useTasks } from "../tasks/tasks";
 
 /** Most urgent first: what needs the user, then what just finished. */
 const GROUPS: { status: AgentStatus; title: MessageKey }[] = [
@@ -16,15 +18,20 @@ const GROUPS: { status: AgentStatus; title: MessageKey }[] = [
 ];
 
 export function AgentsList() {
-  const { list, done } = useAgents();
+  const { list: all, done } = useAgents();
+  const batches = useTasks((s) => s.batches);
   const view = useSession((s) => s.view);
   const now = useNow();
+  // Workers of a task batch are shown by the board, not twice.
+  const taskPanes = new Set(batches.flatMap((b) => b.tasks.map((task) => task.pane)));
+  const list = all.filter((a) => !taskPanes.has(a.pane));
 
-  if (list.length === 0) {
+  if (list.length === 0 && batches.length === 0) {
     return <p className="px-4 text-fg-subtle text-xs">{t("agentsEmpty")}</p>;
   }
   return (
     <div className="flex flex-col gap-2 px-2">
+      <TaskBoard />
       {GROUPS.map(({ status, title }) => {
         const agents = list.filter((a) => statusOf(a, done) === status);
         if (agents.length === 0) return null;

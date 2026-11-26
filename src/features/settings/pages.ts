@@ -25,6 +25,7 @@ export const PAGES: { id: PageId; title: MessageKey; keywords: MessageKey[] }[] 
       "updates",
       "checkUpdates",
       "privacyNote",
+      "discordPresence",
     ],
   },
   {

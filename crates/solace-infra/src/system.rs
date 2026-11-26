@@ -1,3 +1,23 @@
+/// Whether a process with this id still exists.
+pub fn process_alive(pid: u32) -> bool {
+    use sysinfo::{Pid, ProcessRefreshKind, ProcessesToUpdate, System};
+    let pid = Pid::from_u32(pid);
+    let Ok(mut system) = System::new() else {
+        return false;
+    };
+    system.refresh_processes_specifics(
+        ProcessesToUpdate::Some(&[pid]),
+        true,
+        ProcessRefreshKind::nothing(),
+    );
+    system.process(pid).is_some()
+}
+
+/// Whether `command` is an installed program (found on PATH).
+pub fn on_path(command: &str) -> bool {
+    which::which(command).is_ok()
+}
+
 /// Whether the OS shows notification toasts. On Windows a user can switch them off for every app
 /// (Settings > System > Notifications); toasts are then dropped without any error.
 pub fn toasts_enabled() -> bool {

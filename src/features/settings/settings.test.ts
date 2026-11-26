@@ -23,6 +23,12 @@ describe("parseSettings", () => {
     expect(parseSettings({ theme: "daylight", appearance: "dark" }).appearance).toBe("dark");
   });
 
+  it("keeps Discord presence off unless explicitly enabled", () => {
+    expect(defaults.discordPresence).toBe(false);
+    expect(parseSettings({ discordPresence: "yes" }).discordPresence).toBe(false);
+    expect(parseSettings({ discordPresence: true }).discordPresence).toBe(true);
+  });
+
   it("falls back on bad values", () => {
     const bad = parseSettings({ uiScale: 40, contrast: 5, glassOpacity: 0, theme: "nope" });
     expect(bad).toMatchObject({ uiScale: 16, contrast: 100, glassOpacity: 80, theme: "solace" });

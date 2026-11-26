@@ -41,6 +41,8 @@ export interface Settings {
   diffLayout: "unified" | "split";
   diffColors: "red-green" | "blue-orange";
   diffIgnoreWhitespace: boolean;
+  /** Show the agent in use on Discord; opt-in. */
+  discordPresence: boolean;
 }
 
 export const MAX_CSS = 100000;
@@ -73,6 +75,7 @@ export const DEFAULTS: Settings = {
   diffLayout: "unified",
   diffColors: "red-green",
   diffIgnoreWhitespace: false,
+  discordPresence: false,
 };
 
 /** Stored settings, field by field: a bad value falls back to its default instead of breaking
@@ -150,6 +153,7 @@ export function parseSettings(value: unknown, legacy: Legacy = {}): Settings {
     ),
     diffColors: oneOf(raw.diffColors, ["red-green", "blue-orange"], DEFAULTS.diffColors),
     diffIgnoreWhitespace: bool(raw.diffIgnoreWhitespace, DEFAULTS.diffIgnoreWhitespace),
+    discordPresence: bool(raw.discordPresence, DEFAULTS.discordPresence),
   };
 }
 

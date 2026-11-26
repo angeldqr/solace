@@ -98,8 +98,50 @@ export const api = {
   claudeIntegrationInstalled: () => invoke<boolean>("claude_integration_installed"),
   claudeIntegrationSet: (enabled: boolean) => invoke("claude_integration_set", { enabled }),
   usageGet: () => invoke<UsageView>("usage_get"),
+  presenceAvailable: () => invoke<boolean>("presence_available"),
+  presenceUpdate: (activity: PresenceActivity | null) => invoke("presence_update", { activity }),
   shellSet: (path: string | null) => invoke("shell_set", { path }),
+  tasksGet: () => invoke<BatchView[]>("tasks_get"),
+  /** Rejects with git's reason when a worktree still holds uncommitted work. */
+  tasksClean: (batch: string) => invoke("tasks_clean", { batch }),
 };
+
+export type TaskStatus = "starting" | "running" | "done" | "failed" | "closed";
+
+export interface TaskView {
+  id: string;
+  title: string;
+  /** Catalog id of the worker's agent, e.g. "codex". */
+  kind: string;
+  /** Null when the worker's pane could not be opened. */
+  pane: PaneId | null;
+  branch: string | null;
+  worktree: string | null;
+  status: TaskStatus;
+  /** What the agent in the pane is doing now; null when none runs there. */
+  agentState: "idle" | "working" | "blocked" | null;
+  summary: string | null;
+  error: string | null;
+  /** Unix ms of the last status change. */
+  since: number;
+}
+
+/** What one `solace tasks start` launched. */
+export interface BatchView {
+  id: string;
+  lead: PaneId | null;
+  repo: string | null;
+  base: string | null;
+  createdAt: number;
+  tasks: TaskView[];
+}
+
+export interface PresenceActivity {
+  details: string;
+  state?: string;
+  smallImage?: string;
+  smallText?: string;
+}
 
 export interface Limit {
   windowMinutes: number;

@@ -1,8 +1,9 @@
+use std::path::Path;
 use std::thread;
 use std::time::{Duration, Instant};
 
 use serde_json::{Value, json};
-use solace_core::agents::{AgentState, catalog};
+use solace_core::agents::{AgentDef, AgentState, catalog};
 use solace_core::orchestration::{Request, Response};
 use solace_core::terminals::{Direction, PaneId};
 use tauri::{AppHandle, Manager};
@@ -26,7 +27,7 @@ pub fn handle(app: &AppHandle, request: Request) -> Response {
     match request {
         Request::PaneList => Ok(with_state(app, pane_list)),
         Request::PaneSplit { pane, direction } => {
-            split(app, pane, direction, None).map(|pane| json!({ "pane": pane }))
+            split(app, pane, direction, None, None, &[]).map(|pane| json!({ "pane": pane }))
         }
         Request::PaneSend {
             target,
@@ -95,6 +96,30 @@ pub fn handle(app: &AppHandle, request: Request) -> Response {
             });
             Ok(json!({ "pane": pane }))
         }
+        Request::TasksStart {
+            from,
+            cwd,
+            kind,
+            shared,
+            tasks,
+        } => crate::tasks::start(app, from, cwd, kind, shared, tasks),
+        Request::TasksWait {
+            batch,
+            from,
+            timeout_secs,
+        } => crate::tasks::wait(
+            app,
+            batch,
+            from,
+            Duration::from_secs(timeout_secs).min(MAX_WAIT),
+        ),
+        Request::TasksClean { batch, force, from } => crate::tasks::clean(app, &batch, force, from),
+        Request::TaskDone {
+            task,
+            pane,
+            summary,
+            failed,
+        } => crate::tasks::done(app, &task, pane, &summary, failed),
         Request::UsageReport { pane, status } => {
             crate::usage::report(app, pane, &status);
             Ok(json!({}))
@@ -102,14 +127,14 @@ pub fn handle(app: &AppHandle, request: Request) -> Response {
     }
 }
 
-fn with_state<T>(app: &AppHandle, f: impl FnOnce(&mut AppState) -> T) -> T {
+pub(crate) fn with_state<T>(app: &AppHandle, f: impl FnOnce(&mut AppState) -> T) -> T {
     let state = app.state::<Shared>();
     let mut state = state.lock().unwrap();
     f(&mut state)
 }
 
 /// Polls `done` without holding the state lock in between; false on timeout.
-fn wait_until(timeout: Duration, mut done: impl FnMut() -> bool) -> bool {
+pub(crate) fn wait_until(timeout: Duration, mut done: impl FnMut() -> bool) -> bool {
     let deadline = Instant::now() + timeout;
     loop {
         if done() {
@@ -142,11 +167,14 @@ fn resolve(app: &AppHandle, target: &str) -> Result<PaneId> {
 /// the visible tab never move: the user may be typing elsewhere, and a stolen Enter could
 /// confirm something in the agent's pane. A `name` is reserved in the same step, so two
 /// concurrent starts can't both claim it.
-fn split(
+/// `cwd` and `env` start the shell elsewhere and with more variables (see `spawn_shell`).
+pub(crate) fn split(
     app: &AppHandle,
     from: Option<PaneId>,
     direction: Direction,
     name: Option<&str>,
+    cwd: Option<&Path>,
+    env: &[(&str, String)],
 ) -> Result<PaneId> {
     with_state(app, |s| {
         if let Some(name) = name {
@@ -159,23 +187,13 @@ fn split(
                 return Err(format!("an agent named {name:?} already exists"));
             }
         }
-        let from = from
-            .or_else(|| {
-                let space = s
-                    .session
-                    .spaces
-                    .iter()
-                    .find(|sp| Some(sp.id) == s.session.active_space)?;
-                let tab = space.tabs.iter().find(|t| Some(t.id) == space.active_tab)?;
-                Some(tab.focused)
-            })
-            .ok_or("no pane to split")?;
+        let from = from.or_else(|| focused_pane(s)).ok_or("no pane to split")?;
         let pane = s
             .session
             .split_pane_unfocused(from, direction)
             .ok_or("unknown pane")?;
         let (cols, rows) = INITIAL_SIZE;
-        spawn_shell(app, s, pane, cols, rows, None)?;
+        spawn_shell(app, s, pane, cols, rows, None, cwd, env)?;
         if let Some(name) = name {
             s.names.insert(pane, name.to_string());
         }
@@ -184,7 +202,18 @@ fn split(
     })
 }
 
-fn close(app: &AppHandle, pane: PaneId) {
+/// The pane the user is looking at.
+pub(crate) fn focused_pane(s: &AppState) -> Option<PaneId> {
+    let space = s
+        .session
+        .spaces
+        .iter()
+        .find(|sp| Some(sp.id) == s.session.active_space)?;
+    let tab = space.tabs.iter().find(|t| Some(t.id) == space.active_tab)?;
+    Some(tab.focused)
+}
+
+pub(crate) fn close(app: &AppHandle, pane: PaneId) {
     with_state(app, |s| {
         if s.session.close_pane(pane) {
             if let Some(pty) = s.ptys.remove(&pane) {
@@ -263,29 +292,84 @@ fn start_agent(
         .iter()
         .find(|a| a.id == kind)
         .ok_or_else(|| format!("unknown agent kind {kind:?}"))?;
+    def.command()
+        .ok_or("this agent has no command to start it")?;
+    let pane = split(app, from, direction, Some(&name), None, &[])?;
+    let mut reply = json!({ "pane": pane, "name": name, "kind": def.id });
+    let Some(text) = prompt else {
+        start_command(app, pane, def, &|_| true)?;
+        return Ok(reply);
+    };
+    match launch(app, pane, def, &text, AGENT_READY_WITHIN, false, &|_| true)? {
+        Launched::Sent => {}
+        Launched::Blocked => {
+            reply["warning"] = json!(
+                "the agent is waiting for the user (e.g. to trust the folder); prompt not sent"
+            );
+        }
+        Launched::TimedOut | Launched::Gone => {
+            reply["warning"] = json!("the agent did not become ready in time; prompt not sent");
+        }
+    }
+    Ok(reply)
+}
+
+/// Types the agent's command into the pane's shell, once the shell has shown its prompt: typed
+/// before that, the command can be swallowed by shell startup.
+fn start_command(
+    app: &AppHandle,
+    pane: PaneId,
+    def: &AgentDef,
+    live: &dyn Fn(&AppState) -> bool,
+) -> Result<()> {
     let command = def
         .command()
         .ok_or("this agent has no command to start it")?;
-    let pane = split(app, from, direction, Some(&name))?;
-
-    // Typed before the shell shows its prompt, the command can be swallowed by shell startup.
     let mut seen_output = false;
     wait_until(SHELL_READY_WITHIN, || {
         let busy = !quiet(app, pane);
         seen_output |= busy;
         seen_output && !busy
     });
-    type_text(app, pane, command, true, false)?;
+    // The pane may have been closed, or its task finished or cleaned, while the shell started.
+    if !with_state(app, |s| s.session.pane_root(pane).is_some() && live(s)) {
+        return Ok(());
+    }
+    type_text(app, pane, command, true, false)
+}
 
-    let mut reply = json!({ "pane": pane, "name": name, "kind": def.id });
-    let Some(text) = prompt else {
-        return Ok(reply);
-    };
-    // Ready means recognized, done drawing and idle, judged by a screen rule (Claude's title) or,
-    // for agents without one, by output after detection. A tracker that has seen nothing yet also
-    // reads idle, and typeahead landing on a startup dialog (folder trust) would answer it.
-    let (mut detected, mut drew, mut blocked) = (false, false, false);
-    let ready = wait_until(AGENT_READY_WITHIN, || {
+/// How `launch` ended.
+pub(crate) enum Launched {
+    Sent,
+    /// The agent is waiting for the user (e.g. to trust the folder); nothing was sent.
+    Blocked,
+    TimedOut,
+    /// The pane was closed while waiting.
+    Gone,
+}
+
+/// Starts `def` in the pane and sends it `prompt` once it is ready. Ready means recognized,
+/// done drawing and idle, judged by a screen rule (Claude's title) or, for agents without one,
+/// by output after detection. A tracker that has seen nothing yet also reads idle, and typeahead
+/// landing on a startup dialog (folder trust) would answer it. With `wait_out_blocked` a dialog
+/// is waited out (up to `within`) and the prompt goes once the user has answered it. `live`
+/// says whether the caller still wants the launch; once it turns false nothing more is typed.
+pub(crate) fn launch(
+    app: &AppHandle,
+    pane: PaneId,
+    def: &AgentDef,
+    prompt: &str,
+    within: Duration,
+    wait_out_blocked: bool,
+    live: &dyn Fn(&AppState) -> bool,
+) -> Result<Launched> {
+    start_command(app, pane, def, live)?;
+    let (mut detected, mut drew, mut blocked, mut gone) = (false, false, false, false);
+    let ready = wait_until(within, || {
+        gone = with_state(app, |s| s.session.pane_root(pane).is_none() || !live(s));
+        if gone {
+            return true;
+        }
         let Some((id, state)) = with_state(app, |s| agent_in(s, pane)) else {
             return false;
         };
@@ -293,8 +377,8 @@ fn start_agent(
             return false;
         }
         if state == AgentState::Blocked {
-            blocked = true;
-            return true;
+            blocked = !wait_out_blocked;
+            return blocked;
         }
         let busy = !quiet(app, pane);
         drew |= detected && busy;
@@ -309,16 +393,20 @@ fn start_agent(
         });
         state == AgentState::Idle && !busy && (idle_on_screen || drew)
     });
-    if ready && !blocked {
-        type_text(app, pane, &text, true, true)?;
+    Ok(if gone {
+        Launched::Gone
+    } else if blocked {
+        Launched::Blocked
+    } else if ready {
+        // Re-checked right before typing: nothing may be typed into a pane that moved on.
+        if !with_state(app, |s| s.session.pane_root(pane).is_some() && live(s)) {
+            return Ok(Launched::Gone);
+        }
+        type_text(app, pane, prompt, true, true)?;
+        Launched::Sent
     } else {
-        reply["warning"] = json!(if blocked {
-            "the agent is waiting for the user (e.g. to trust the folder); prompt not sent"
-        } else {
-            "the agent did not become ready in time; prompt not sent"
-        });
-    }
-    Ok(reply)
+        Launched::TimedOut
+    })
 }
 
 fn send_prompt(app: &AppHandle, target: &str, text: &str, wait: bool, timeout: Duration) -> Result {

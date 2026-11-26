@@ -15,6 +15,8 @@ const MARKER: &str = "solace-hook";
 pub struct ClaudePaths {
     pub settings: PathBuf,
     pub skill: PathBuf,
+    /// Codex and several other agents read skills from here.
+    pub agents_skill: PathBuf,
 }
 
 impl ClaudePaths {
@@ -23,6 +25,7 @@ impl ClaudePaths {
         ClaudePaths {
             settings: claude.join("settings.json"),
             skill: claude.join("skills").join("solace").join("SKILL.md"),
+            agents_skill: home.join(".agents/skills/solace/SKILL.md"),
         }
     }
 }
@@ -197,10 +200,25 @@ pub fn install_claude(paths: &ClaudePaths, solace_exe: &Path) -> io::Result<()> 
     }
     add_statusline(&mut settings, solace_exe);
     write_settings(&paths.settings, &settings)?;
-    if let Some(dir) = paths.skill.parent() {
-        fs::create_dir_all(dir)?;
+    for skill in [&paths.skill, &paths.agents_skill] {
+        if let Some(dir) = skill.parent() {
+            fs::create_dir_all(dir)?;
+        }
+        fs::write(skill, SKILL)?;
     }
-    fs::write(&paths.skill, SKILL)
+    Ok(())
+}
+
+/// Removes our SKILL.md, and its folder when nothing else is in it.
+fn remove_skill(skill: &Path) -> io::Result<()> {
+    match fs::remove_file(skill) {
+        Err(err) if err.kind() != io::ErrorKind::NotFound => return Err(err),
+        _ => {}
+    }
+    if let Some(dir) = skill.parent() {
+        let _ = fs::remove_dir(dir); // fails, as wanted, when the user keeps other files there
+    }
+    Ok(())
 }
 
 pub fn uninstall_claude(paths: &ClaudePaths) -> io::Result<()> {
@@ -209,10 +227,8 @@ pub fn uninstall_claude(paths: &ClaudePaths) -> io::Result<()> {
         strip_ours(&mut settings);
         write_settings(&paths.settings, &settings)?;
     }
-    match fs::remove_file(&paths.skill) {
-        Err(err) if err.kind() != io::ErrorKind::NotFound => Err(err),
-        _ => Ok(()),
-    }
+    remove_skill(&paths.skill)?;
+    remove_skill(&paths.agents_skill)
 }
 
 pub fn claude_installed(paths: &ClaudePaths) -> bool {
@@ -261,7 +277,7 @@ mod tests {
         let stop = settings["hooks"]["Stop"].as_array().unwrap();
         assert_eq!(stop.len(), 2, "the user's hook plus exactly one of ours");
         assert!(claude_installed(&paths));
-        assert!(paths.skill.exists());
+        assert!(paths.skill.exists() && paths.agents_skill.exists());
         assert!(paths.settings.with_extension("json.solace-backup").exists());
 
         uninstall_claude(&paths).unwrap();
@@ -271,7 +287,26 @@ mod tests {
             "only Solace's hooks are removed"
         );
         assert!(!claude_installed(&paths));
-        assert!(!paths.skill.exists());
+        assert!(!paths.skill.exists() && !paths.agents_skill.exists());
+        assert!(
+            !paths.agents_skill.parent().unwrap().exists(),
+            "an empty folder goes too"
+        );
+        fs::remove_dir_all(&home).unwrap();
+    }
+
+    #[test]
+    fn uninstall_keeps_other_files_in_the_skill_folder() {
+        let home = std::env::temp_dir().join(format!("solace-claude-skill-{}", std::process::id()));
+        let paths = ClaudePaths::in_home(&home);
+        let exe = &home.join("solace.exe");
+        fs::create_dir_all(&home).unwrap();
+        fs::write(exe, "").unwrap();
+        install_claude(&paths, exe).unwrap();
+        let mine = paths.agents_skill.with_file_name("notes.md");
+        fs::write(&mine, "mine").unwrap();
+        uninstall_claude(&paths).unwrap();
+        assert!(mine.exists() && !paths.agents_skill.exists());
         fs::remove_dir_all(&home).unwrap();
     }
 

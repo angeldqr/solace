@@ -1,7 +1,8 @@
 use std::fs;
 use std::io;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
+use std::time::Duration;
 
 use serde::Serialize;
 
@@ -41,8 +42,13 @@ pub struct Change {
 }
 
 fn command(dir: &Path) -> Command {
-    let mut command = Command::new("git");
+    let mut command = windowless("git");
     command.current_dir(dir);
+    command
+}
+
+fn windowless(program: &str) -> Command {
+    let mut command = Command::new(program);
     #[cfg(windows)]
     {
         use std::os::windows::process::CommandExt;
@@ -114,6 +120,251 @@ fn git_text(dir: &Path, args: &[&str]) -> Result<String, String> {
     } else {
         Err(String::from_utf8_lossy(&output.stderr).trim().to_string())
     }
+}
+
+/// The repository's top folder; `Ok(None)` when `dir` is not inside one. A git that can't run
+/// is an error, not "no repository". With `wsl` git runs in WSL, and the folder is translated
+/// back to a Windows path (a repository inside the distro's own file system is refused).
+pub fn toplevel(dir: &Path, wsl: bool) -> Result<Option<PathBuf>, String> {
+    // The files say whether there is a repository; git's own message is localized.
+    if current_branch(dir).is_none() {
+        return Ok(None);
+    }
+    let top = text(dir, wsl, &["rev-parse", "--show-toplevel"])?;
+    let top = top.trim();
+    if wsl {
+        from_wsl_path(top).map(Some)
+    } else {
+        Ok(Some(PathBuf::from(top)))
+    }
+}
+
+/// `/mnt/c/Users/x` is `C:/Users/x`.
+fn from_wsl_path(path: &str) -> Result<PathBuf, String> {
+    let rest = path.strip_prefix("/mnt/").ok_or_else(|| {
+        format!("{path} is inside WSL's own file system; open the repository from a Windows drive")
+    })?;
+    let (drive, tail) = rest.split_once('/').unwrap_or((rest, ""));
+    if drive.len() != 1 {
+        return Err(format!("{path} is not on a Windows drive"));
+    }
+    Ok(PathBuf::from(format!(
+        "{}:/{tail}",
+        drive.to_ascii_uppercase()
+    )))
+}
+
+/// Short id of the current commit; `Err` in a repository without commits.
+pub fn head(top: &Path, wsl: bool) -> Result<String, String> {
+    text(top, wsl, &["rev-parse", "--short", "HEAD"]).map(|id| id.trim().to_string())
+}
+
+/// How many commits `branch` has that `base` doesn't.
+pub fn commits_since(top: &Path, base: &str, branch: &str, wsl: bool) -> Result<u32, String> {
+    let range = format!("{base}..{branch}");
+    let count = text(top, wsl, &["rev-list", "--count", &range])?;
+    count
+        .trim()
+        .parse()
+        .map_err(|_| format!("unexpected count {count:?}"))
+}
+
+/// Whether `dir` has uncommitted changes, untracked files included.
+pub fn is_dirty(dir: &Path, wsl: bool) -> Result<bool, String> {
+    if wsl {
+        let out = text(
+            dir,
+            true,
+            &["status", "--porcelain", "--untracked-files=all"],
+        )?;
+        return Ok(!out.trim().is_empty());
+    }
+    Ok(status(dir)?.is_some_and(|changes| !changes.is_empty()))
+}
+
+/// Output of `git <args>` in `dir`, through WSL when the agents run there.
+fn text(dir: &Path, wsl: bool, args: &[&str]) -> Result<String, String> {
+    if !wsl {
+        return git_text(dir, args);
+    }
+    let output = worktree_command(dir, true, args)
+        .output()
+        .map_err(|e| e.to_string())?;
+    if output.status.success() {
+        Ok(String::from_utf8_lossy(&output.stdout).into_owned())
+    } else {
+        Err(String::from_utf8_lossy(&output.stderr).trim().to_string())
+    }
+}
+
+fn run(mut command: Command) -> Result<(), String> {
+    let output = command.output().map_err(|err| match err.kind() {
+        io::ErrorKind::NotFound => "git is not installed".to_string(),
+        _ => err.to_string(),
+    })?;
+    if output.status.success() {
+        Ok(())
+    } else {
+        Err(String::from_utf8_lossy(&output.stderr).trim().to_string())
+    }
+}
+
+/// `git <args>` in `top`, through WSL when the agents run there.
+fn worktree_command(top: &Path, wsl: bool, args: &[&str]) -> Command {
+    if wsl {
+        let mut command = windowless("wsl.exe");
+        command
+            .arg("--cd")
+            .arg(top)
+            .args(["--exec", "git"])
+            .args(args);
+        command
+    } else {
+        let mut command = command(top);
+        command.args(args);
+        command
+    }
+}
+
+/// Adds a worktree at `top/rel_dir` on a new branch started from HEAD. `.solace/` gets its own
+/// `.gitignore` so worktrees never show up as changes; the user's files are not touched.
+/// Plain `git`, not `git()`: that one blanks the repository's filters, and a worktree checked out
+/// without them would hold LFS pointers instead of files. The agents run this repository's tools
+/// in there anyway, so trusting its config here adds nothing.
+pub fn worktree_add(top: &Path, rel_dir: &str, branch: &str, wsl: bool) -> Result<(), String> {
+    let solace = top.join(".solace");
+    fs::create_dir_all(&solace).map_err(|e| e.to_string())?;
+    let ignore = solace.join(".gitignore");
+    if !ignore.exists() {
+        fs::write(&ignore, "*\n").map_err(|e| e.to_string())?;
+    }
+    run(worktree_command(
+        top,
+        wsl,
+        &["worktree", "add", "-b", branch, rel_dir, "HEAD"],
+    ))
+}
+
+/// Removes a worktree. Without `force` git refuses one with uncommitted changes.
+pub fn worktree_remove(top: &Path, rel_dir: &str, force: bool, wsl: bool) -> Result<(), String> {
+    let mut args = vec!["worktree", "remove"];
+    if force {
+        args.push("--force");
+    }
+    args.push(rel_dir);
+    run(worktree_command(top, wsl, &args))
+}
+
+/// Delays between attempts to remove a worktree whose files are still held by exiting processes.
+pub const REMOVE_BACKOFF: [Duration; 4] = [
+    Duration::from_millis(250),
+    Duration::from_millis(500),
+    Duration::from_secs(1),
+    Duration::from_secs(2),
+];
+
+fn normal(path: &str) -> String {
+    let path = path.replace('\\', "/");
+    let path = path.trim_end_matches('/');
+    if cfg!(windows) {
+        path.to_lowercase()
+    } else {
+        path.to_string()
+    }
+}
+
+/// Whether git still lists `dir` as one of its worktrees.
+pub fn worktree_registered(top: &Path, dir: &Path, wsl: bool) -> Result<bool, String> {
+    let list = text(top, wsl, &["worktree", "list", "--porcelain"])?;
+    let want = normal(&dir.to_string_lossy());
+    Ok(list
+        .lines()
+        .filter_map(|line| line.strip_prefix("worktree "))
+        .filter_map(|path| {
+            if wsl {
+                from_wsl_path(path)
+                    .ok()
+                    .map(|p| p.to_string_lossy().into_owned())
+            } else {
+                Some(path.to_string())
+            }
+        })
+        .any(|path| normal(&path) == want))
+}
+
+/// Forgets worktrees whose folders are gone.
+pub fn worktree_prune(top: &Path, wsl: bool) -> Result<(), String> {
+    run(worktree_command(top, wsl, &["worktree", "prune"]))
+}
+
+/// Deletes a worktree's folder that git let go of but could not delete (Windows keeps files
+/// locked while processes exit). Only folders inside `top/.solace/worktrees` are ever touched.
+pub fn remove_leftover(top: &Path, dir: &Path, delays: &[Duration]) -> Result<(), String> {
+    if !dir.exists() {
+        return Ok(());
+    }
+    let root = fs::canonicalize(top.join(".solace/worktrees")).map_err(|e| e.to_string())?;
+    let target = fs::canonicalize(dir).map_err(|e| e.to_string())?;
+    if target == root || !target.starts_with(&root) {
+        return Err(format!(
+            "{} is not inside {}",
+            target.display(),
+            root.display()
+        ));
+    }
+    let mut last = String::new();
+    for delay in std::iter::once(&Duration::ZERO).chain(delays) {
+        std::thread::sleep(*delay);
+        match fs::remove_dir_all(&target) {
+            Ok(()) => return Ok(()),
+            Err(_) if !target.exists() => return Ok(()),
+            Err(err) => last = err.to_string(),
+        }
+    }
+    Err(format!("could not delete {}: {last}", target.display()))
+}
+
+/// `worktree_remove` for Windows, where a worktree whose processes are still exiting cannot be
+/// deleted yet: it retries with backoff, and when git has let go of the worktree but left its
+/// folder, deletes the folder itself (see `remove_leftover`). Uncommitted changes without
+/// `force` are refused at once, with no retries.
+pub fn worktree_remove_retrying(
+    top: &Path,
+    rel_dir: &str,
+    force: bool,
+    wsl: bool,
+) -> Result<(), String> {
+    let dir = top.join(rel_dir);
+    let mut result = worktree_remove(top, rel_dir, force, wsl);
+    for delay in REMOVE_BACKOFF {
+        let Err(err) = &result else { break };
+        let lower = err.to_lowercase();
+        let locked = [
+            "failed to delete",
+            "permission denied",
+            "another process",
+            "not empty",
+        ]
+        .iter()
+        .any(|m| lower.contains(m));
+        if !locked || matches!(worktree_registered(top, &dir, wsl), Ok(false)) {
+            break;
+        }
+        std::thread::sleep(delay);
+        result = worktree_remove(top, rel_dir, force, wsl);
+    }
+    let Err(err) = result else { return Ok(()) };
+    if matches!(worktree_registered(top, &dir, wsl), Ok(false)) {
+        remove_leftover(top, &dir, &REMOVE_BACKOFF)?;
+        let _ = worktree_prune(top, wsl);
+        return Ok(());
+    }
+    Err(err)
+}
+
+/// Deletes a branch nobody has merged: only for undoing a worktree that was just made.
+pub fn branch_delete(top: &Path, branch: &str, wsl: bool) -> Result<(), String> {
+    run(worktree_command(top, wsl, &["branch", "-D", branch]))
 }
 
 /// Uncommitted changes under `dir`, staged or not, with line counts. `Ok(None)` outside a repo.
@@ -428,6 +679,98 @@ mod tests {
             None
         );
         let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn worktrees_are_added_hidden_and_removed_only_when_clean() {
+        if git(&std::env::temp_dir(), &["--version"]).is_err() {
+            eprintln!("skipped: git is not installed");
+            return;
+        }
+        let root = std::env::temp_dir().join(format!("solace-git-wt-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(&root).unwrap();
+        let run =
+            |args: &[&str]| assert!(git(&root, args).unwrap().status.success(), "git {args:?}");
+        run(&["init", "-q"]);
+        assert!(head(&root, false).is_err(), "no commits yet");
+        fs::write(root.join("f.txt"), "a\n").unwrap();
+        run(&["add", "f.txt"]);
+        run(&[
+            "-c",
+            "user.name=t",
+            "-c",
+            "user.email=t@t",
+            "commit",
+            "-q",
+            "-m",
+            "init",
+        ]);
+        assert!(!head(&root, false).unwrap().is_empty());
+        let top = toplevel(&root, false).unwrap().unwrap();
+        assert_eq!(commits_since(&top, "HEAD", "HEAD", false).unwrap(), 0);
+        assert!(!is_dirty(&root, false).unwrap());
+
+        let rel = ".solace/worktrees/b1-1";
+        worktree_add(&top, rel, "solace/b1-1-x", false).unwrap();
+        assert!(top.join(rel).join("f.txt").is_file());
+        assert!(top.join(".solace/.gitignore").is_file());
+        assert_eq!(
+            current_branch(&top.join(rel)).as_deref(),
+            Some("solace/b1-1-x")
+        );
+        let changes = status(&root).unwrap().unwrap();
+        assert!(
+            changes.is_empty(),
+            "the main folder shows no changes: {changes:?}"
+        );
+
+        fs::write(top.join(rel).join("f.txt"), "changed\n").unwrap();
+        assert!(is_dirty(&top.join(rel), false).unwrap());
+        assert!(
+            worktree_remove(&top, rel, false, false).is_err(),
+            "dirty: refused"
+        );
+        assert!(top.join(rel).is_dir());
+        worktree_remove(&top, rel, true, false).unwrap();
+        assert!(!top.join(rel).exists());
+        branch_delete(&top, "solace/b1-1-x", false).unwrap();
+
+        // The retrying removal: refuses dirty work, removes clean worktrees, and cleans up a
+        // folder git no longer knows but could not delete.
+        let rel2 = ".solace/worktrees/b1-2";
+        worktree_add(&top, rel2, "solace/b1-2-y", false).unwrap();
+        assert!(worktree_registered(&top, &top.join(rel2), false).unwrap());
+        fs::write(top.join(rel2).join("f.txt"), "dirty\n").unwrap();
+        assert!(worktree_remove_retrying(&top, rel2, false, false).is_err());
+        worktree_remove_retrying(&top, rel2, true, false).unwrap();
+        assert!(!top.join(rel2).exists());
+        assert!(!worktree_registered(&top, &top.join(rel2), false).unwrap());
+        let left = top.join(".solace/worktrees/b1-3");
+        fs::create_dir_all(left.join("sub")).unwrap();
+        fs::write(left.join("sub/x"), "x").unwrap();
+        remove_leftover(&top, &left, &[]).unwrap();
+        assert!(!left.exists());
+        assert!(
+            remove_leftover(&top, &top, &[]).is_err(),
+            "outside .solace/worktrees: refused"
+        );
+        assert!(remove_leftover(&top, &top.join(".solace"), &[]).is_err());
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn toplevel_fails_outside_a_repository() {
+        let dir = std::env::temp_dir().join(format!("solace-git-none-{}", std::process::id()));
+        fs::create_dir_all(&dir).unwrap();
+        let out = toplevel(&dir, false);
+        let _ = fs::remove_dir_all(&dir);
+        assert_eq!(out, Ok(None));
+        assert_eq!(
+            from_wsl_path("/mnt/c/Users/x"),
+            Ok(PathBuf::from("C:/Users/x"))
+        );
+        assert!(from_wsl_path("/home/me/repo").is_err());
     }
 
     #[test]
