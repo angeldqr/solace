@@ -66,6 +66,16 @@ pub fn run() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
         .setup(|app| {
+            // Before any pty exists. The fallback is the ConPTY built into Windows.
+            #[cfg(windows)]
+            if let Err(err) = app
+                .path()
+                .resource_dir()
+                .map_err(|e| e.to_string())
+                .and_then(|dir| solace_infra::pty::use_bundled_conpty(&dir.join("conpty")))
+            {
+                eprintln!("bundled ConPTY unavailable, using the Windows one: {err}");
+            }
             let data = app.path().app_data_dir()?;
             let file = data.join("session.json");
             let settings_file = data.join("settings.json");

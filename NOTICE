@@ -14,3 +14,7 @@ Solace's design takes inspiration from, and may adapt portions of, the following
   Agent brand marks in src/shared/icons/agents.
 
 Any file adapted from these projects keeps a header naming its origin.
+
+This product bundles the Windows ConPTY runtime (conpty.dll and OpenConsole.exe) from
+Microsoft's Microsoft.Windows.Console.ConPTY package, https://github.com/microsoft/terminal,
+licensed under the MIT License. Its license and third-party notices ship in conpty/.

@@ -1,5 +1,6 @@
 // Builds the `solace` CLI into src-tauri/binaries, which the bundle installs as bin/solace.exe;
-// the app puts that folder on PATH for its shells.
+// the app puts that folder on PATH for its shells. Also fetches the bundled ConPTY.
+import "./fetch-conpty.mjs";
 import { execFileSync } from "node:child_process";
 import { copyFileSync, mkdirSync } from "node:fs";
 import { join } from "node:path";

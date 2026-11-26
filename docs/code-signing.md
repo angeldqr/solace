@@ -16,6 +16,8 @@ release workflow publishes unsigned builds, exactly as before.
 
 Signing runs only when the repository variable `SIGNPATH_ORGANIZATION_ID` is set.
 
+The installers also carry Microsoft's ConPTY (`conpty/conpty.dll` and `conpty/*/OpenConsole.exe`), already signed by Microsoft. They ship as they are and are not sent to SignPath.
+
 `Solace.exe` itself is not signed yet, because `tauri bundle` rewrites a marker inside it for each installer type, which would void an earlier signature. The installers, which are what Windows SmartScreen checks on download, are signed. To sign it too later:
 
 1. Make one copy of `Solace.exe` per installer type, with the marker already set (`__TAURI_BUNDLE_TYPE_VAR_UNK` replaced by `VAR_NSS` or `VAR_MSI`; same length).

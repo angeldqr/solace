@@ -48,7 +48,12 @@
     },
     "createUpdaterArtifacts": true,
     "resources": {
-      "binaries/solace.exe": "bin/solace.exe"
+      "binaries/solace.exe": "bin/solace.exe",
+      "conpty/conpty.dll": "conpty/conpty.dll",
+      "conpty/x64/OpenConsole.exe": "conpty/x64/OpenConsole.exe",
+      "conpty/arm64/OpenConsole.exe": "conpty/arm64/OpenConsole.exe",
+      "conpty/LICENSE.txt": "conpty/LICENSE.txt",
+      "conpty/NOTICE.md": "conpty/NOTICE.md"
     }
   },
   "mainBinaryName": "Solace",

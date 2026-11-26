@@ -267,13 +267,23 @@ impl Pty {
                 drop(activity);
                 match sink.as_mut() {
                     Some(sink) => sink(pending),
-                    // Unwatched, so answer cursor-position queries as a terminal would: ConPTY
-                    // sends one at startup and the shell waits for the reply before running.
-                    None if pending.windows(4).any(|w| w == b"\x1b[6n") => {
-                        let (row, col) = cursor;
-                        let _ = replies.send(format!("\x1b[{};{}R", row + 1, col + 1).into_bytes());
+                    // Unwatched, so answer ConPTY's startup queries as a terminal would: the shell
+                    // waits for the cursor position, and newer ConPTY waits 3 s for the device
+                    // attributes.
+                    None => {
+                        let asks = |query: &[u8]| pending.windows(query.len()).any(|w| w == query);
+                        let mut reply = Vec::new();
+                        if asks(b"\x1b[6n") {
+                            let (row, col) = cursor;
+                            reply.extend(format!("\x1b[{};{}R", row + 1, col + 1).into_bytes());
+                        }
+                        if asks(b"\x1b[c") || asks(b"\x1b[0c") {
+                            reply.extend(b"\x1b[?1;2c"); // what xterm.js answers
+                        }
+                        if !reply.is_empty() {
+                            let _ = replies.send(reply);
+                        }
                     }
-                    None => {}
                 }
             }
             // The waiter reports before it closes the pty, which is what ended the output.
@@ -426,6 +436,52 @@ fn is_valid_env(key: &str, value: &str) -> bool {
         && !key.chars().skip(1).any(|c| c == '=')
         && !key.contains('\0')
         && !value.contains('\0')
+}
+
+/// Makes ptys use the ConPTY in `dir` (Solace's pinned copy, newer than Windows') and stops DLLs
+/// from being found through PATH or the working directory. Call before the first pty.
+/// `SOLACE_WINDOWS_CONPTY=system` keeps the ConPTY built into Windows.
+#[cfg(windows)]
+pub fn use_bundled_conpty(dir: &Path) -> Result<(), String> {
+    use windows_sys::Win32::System::LibraryLoader::{
+        LOAD_LIBRARY_SEARCH_DEFAULT_DIRS, LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR, LoadLibraryExW,
+        SetDefaultDllDirectories,
+    };
+    // portable-pty loads "conpty.dll" by bare name, which would otherwise search PATH.
+    // SAFETY: takes only flags; it narrows where this process looks for DLLs from now on.
+    if unsafe { SetDefaultDllDirectories(LOAD_LIBRARY_SEARCH_DEFAULT_DIRS) } == 0 {
+        return Err(format!(
+            "SetDefaultDllDirectories: {}",
+            std::io::Error::last_os_error()
+        ));
+    }
+    if std::env::var("SOLACE_WINDOWS_CONPTY").as_deref() == Ok("system") {
+        return Ok(());
+    }
+    let dll = dir.join("conpty.dll");
+    // Tauri's paths are verbatim; turn `\\?\C:\..` and `\\?\UNC\srv\..` back into normal paths.
+    let path = dll.to_string_lossy();
+    let path = match path.strip_prefix(r"\\?\") {
+        Some(rest) => match rest.strip_prefix(r"UNC\") {
+            Some(share) => format!(r"\\{share}"),
+            None => rest.to_string(),
+        },
+        None => path.to_string(),
+    };
+    let wide = widestring::U16CString::from_str(&path).map_err(|e| e.to_string())?;
+    // Once loaded, the bare-name load in portable-pty resolves to this module.
+    // SAFETY: `wide` is a NUL-terminated absolute path that outlives the call; no file handle.
+    let module = unsafe {
+        LoadLibraryExW(
+            wide.as_ptr(),
+            std::ptr::null_mut(),
+            LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR | LOAD_LIBRARY_SEARCH_DEFAULT_DIRS,
+        )
+    };
+    if module.is_null() {
+        return Err(format!("{path}: {}", std::io::Error::last_os_error()));
+    }
+    Ok(())
 }
 
 #[cfg(test)]
