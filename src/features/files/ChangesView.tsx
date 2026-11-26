@@ -1,134 +1,100 @@
-import { ArrowLeft } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { t } from "../../shared/i18n";
-import { api, type Change, type SpaceId } from "../../shared/ipc";
-import { useOnDisk } from "./useOnDisk";
+import type { Change, SpaceId } from "../../shared/ipc";
+import { Tooltip } from "../../shared/ui/Tooltip";
+import { DiffView } from "./DiffView";
+import { FileIcon } from "./fileIcons";
+import { usePanel } from "./panel";
+import { type Changes, STATUS_COLOR, slash } from "./useChanges";
 
-const STATUS_COLOR: Record<string, string> = {
-  M: "text-warning",
-  A: "text-success",
-  U: "text-success",
-  D: "text-danger",
-  R: "text-info",
-  "!": "text-danger",
-  C: "text-info",
-};
+/** Below this the side-by-side columns don't fit, so opening a diff widens the panel. */
+const NARROW = 560;
 
-/** Long diffs are cut here; the full file is one double-click away in the editor. */
-const MAX_DIFF_LINES = 4000;
-
-export function ChangesView({ space }: { space: SpaceId }) {
-  const { data: changes, error } = useOnDisk(() => api.gitStatus(space), String(space));
+export function ChangesView({ space, changes: result }: { space: SpaceId; changes: Changes }) {
+  const { data: changes, error } = result;
   const [selected, setSelected] = useState<Change | null>(null);
+  /** The `wide` value to restore when the diff closes; null while no diff is open. */
+  const restore = useRef<boolean | null>(null);
+
+  const close = () => {
+    if (restore.current !== null) usePanel.setState({ wide: restore.current });
+    restore.current = null;
+  };
+  // Leaving the tab with a diff open must not leave the panel stretched.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: `close` only reads a ref
+  useEffect(() => close, []);
 
   if (selected) {
-    return <DiffView space={space} change={selected} onBack={() => setSelected(null)} />;
+    return (
+      <DiffView
+        space={space}
+        change={selected}
+        onBack={() => {
+          close();
+          setSelected(null);
+        }}
+      />
+    );
   }
   if (error) return <Notice text={error} />;
   if (changes === undefined) return null;
   if (changes === null) return <Notice text={t("notARepository")} />;
   if (changes.length === 0) return <Notice text={t("noChanges")} />;
 
+  const open = (change: Change) => {
+    const { wide, width } = usePanel.getState();
+    restore.current = wide;
+    if (width < NARROW) usePanel.setState({ wide: true });
+    setSelected(change);
+  };
   const added = changes.reduce((n, c) => n + (c.additions ?? 0), 0);
   const removed = changes.reduce((n, c) => n + (c.deletions ?? 0), 0);
   return (
     <div className="flex flex-col">
-      <p className="flex h-8 items-center gap-2 px-3 text-2xs text-fg-subtle">
+      <p className="flex h-9 items-center gap-2 px-3 text-fg-subtle text-xs">
         {t("changeCount", { n: changes.length })}
         <span className="ml-auto text-success tabular-nums">+{added}</span>
         <span className="text-danger tabular-nums">−{removed}</span>
       </p>
-      {changes.map((change) => (
-        <button
-          type="button"
-          key={change.path}
-          title={change.path}
-          onClick={() => setSelected(change)}
-          className="flex h-7 w-full items-center gap-2 px-3 text-left text-fg-muted hover:bg-hover hover:text-fg"
-        >
-          <span
-            className={`w-3 shrink-0 font-mono text-2xs ${STATUS_COLOR[change.status] ?? "text-fg-subtle"}`}
-          >
-            {change.status}
-          </span>
-          <span className="truncate" dir="rtl">
-            {change.path}
-          </span>
-          {change.additions !== null && (
-            <span className="ml-auto shrink-0 text-2xs tabular-nums">
-              <span className="text-success">+{change.additions}</span>{" "}
-              <span className="text-danger">−{change.deletions ?? 0}</span>
-            </span>
-          )}
-        </button>
-      ))}
+      {changes.map((change) => {
+        const path = slash(change.path);
+        const slashAt = path.lastIndexOf("/");
+        const dir = slashAt === -1 ? "" : path.slice(0, slashAt);
+        return (
+          <Tooltip key={change.path} label={path}>
+            <button
+              type="button"
+              onClick={() => open(change)}
+              className="flex h-8 w-full items-center gap-2 px-3 text-left text-body text-fg-muted transition-colors hover:bg-hover hover:text-fg"
+            >
+              <FileIcon name={path.slice(slashAt + 1)} />
+              <span className="flex min-w-0 flex-1 items-baseline gap-2 overflow-hidden">
+                <span className="min-w-0 truncate font-medium text-fg">
+                  {path.slice(slashAt + 1)}
+                </span>
+                {dir && (
+                  <span className="min-w-0 shrink-[2] truncate text-fg-subtle text-xs">{dir}</span>
+                )}
+              </span>
+              <span
+                className={`w-4 shrink-0 text-center font-mono text-2xs ${STATUS_COLOR[change.status] ?? "text-fg-subtle"}`}
+              >
+                {change.status}
+              </span>
+              {change.additions !== null && (
+                <span className="shrink-0 text-xs tabular-nums">
+                  <span className="text-success">+{change.additions}</span>{" "}
+                  <span className="text-danger">−{change.deletions ?? 0}</span>
+                </span>
+              )}
+            </button>
+          </Tooltip>
+        );
+      })}
     </div>
   );
-}
-
-function DiffView({
-  space,
-  change,
-  onBack,
-}: {
-  space: SpaceId;
-  change: Change;
-  onBack: () => void;
-}) {
-  const { data, error } = useOnDisk(
-    () => api.gitDiff(space, change.path, change.from, change.status === "U"),
-    `${space}:${change.status}:${change.path}`,
-  );
-  const diff = data ?? error ?? null;
-
-  const lines = (diff ?? "").split("\n");
-  return (
-    <div className="flex h-full min-h-0 flex-col">
-      <div className="flex h-8 shrink-0 items-center gap-2 border-line border-b px-2">
-        <button
-          type="button"
-          onClick={onBack}
-          aria-label={t("back")}
-          title={t("back")}
-          className="grid size-6 place-items-center rounded-md text-fg-muted hover:bg-hover hover:text-fg"
-        >
-          <ArrowLeft aria-hidden className="size-3.5" />
-        </button>
-        <span className="truncate text-fg" title={change.path}>
-          {change.path}
-        </span>
-      </div>
-      <pre className="min-h-0 flex-1 overflow-auto py-2 font-mono text-2xs leading-relaxed select-text">
-        {/* One box as wide as the longest line, so every row's colour spans the full scroll width. */}
-        <div className="w-max min-w-full">
-          {diff !== null && !diff.trim() && (
-            <div className="px-3 text-fg-subtle">{t("noTextDiff")}</div>
-          )}
-          {lines.slice(0, MAX_DIFF_LINES).map((line, i) => (
-            // biome-ignore lint/suspicious/noArrayIndexKey: diff lines have no identity beyond position
-            <div key={i} className={`px-3 ${lineColor(line)}`}>
-              {line || " "}
-            </div>
-          ))}
-          {lines.length > MAX_DIFF_LINES && (
-            <div className="px-3 pt-2 text-fg-subtle">{t("diffTruncated")}</div>
-          )}
-        </div>
-      </pre>
-    </div>
-  );
-}
-
-function lineColor(line: string) {
-  if (line.startsWith("+++") || line.startsWith("---") || line.startsWith("diff ")) {
-    return "text-fg-subtle";
-  }
-  if (line.startsWith("+")) return "bg-success/10 text-success";
-  if (line.startsWith("-")) return "bg-danger/10 text-danger";
-  if (line.startsWith("@@")) return "text-info";
-  return "text-fg-muted";
 }
 
 function Notice({ text }: { text: string }) {
-  return <p className="px-3 py-3 text-fg-subtle">{text}</p>;
+  return <p className="px-3 py-3 text-body text-fg-subtle">{text}</p>;
 }

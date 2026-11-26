@@ -8,9 +8,17 @@ interface PanelState {
   open: boolean;
   tab: PanelTab;
   width: number;
+  /** Not persisted: the panel temporarily takes most of the window (reading a diff). */
+  wide: boolean;
   /** Bumped when files in the active space change on disk, so open views refetch. */
   version: number;
 }
+
+export const DEFAULT_WIDTH = 420;
+export const MIN_WIDTH = 280;
+const ABSOLUTE_MAX_WIDTH = 960;
+/** Evaluated at drag time: the panel never takes more than 60% of the window. */
+export const maxWidth = () => Math.min(ABSOLUTE_MAX_WIDTH, Math.round(window.innerWidth * 0.6));
 
 const STORAGE_KEY = "solace.panel";
 const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) ?? "{}") as Partial<PanelState>;
@@ -18,7 +26,11 @@ const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) ?? "{}") as Partial<P
 export const usePanel = create<PanelState>(() => ({
   open: saved.open ?? false,
   tab: saved.tab ?? "files",
-  width: saved.width ?? 300,
+  width:
+    typeof saved.width === "number" && saved.width >= MIN_WIDTH && saved.width <= ABSOLUTE_MAX_WIDTH
+      ? saved.width
+      : DEFAULT_WIDTH,
+  wide: false,
   version: 0,
 }));
 

@@ -10,6 +10,11 @@ Solace's design takes inspiration from, and may adapt portions of, the following
 - T3 Code (https://github.com/pingdotgg/t3code), MIT License, Copyright (c) 2026 T3 Tools Inc.
   Visual language: dark palette tokens and interface conventions.
 
+- Pierre Diffs (https://github.com/pierrecomputer/pierre), @pierre/diffs, Apache License 2.0.
+  Diff rendering and syntax highlighting in the Changes panel.
+- Pierre Trees (https://github.com/pierrecomputer/pierre), @pierre/trees, Apache License 2.0.
+  File-type icon set used in the Files and Changes panels.
+
 - Lobe Icons (https://github.com/lobehub/lobe-icons), MIT License, Copyright (c) LobeHub.
   Agent brand marks in src/shared/icons/agents.
 
