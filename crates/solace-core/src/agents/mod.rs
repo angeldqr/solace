@@ -97,6 +97,28 @@ pub fn identify(exe: &str, args: &[String]) -> Option<&'static AgentDef> {
     })
 }
 
+/// Like `identify`, also seeing through interpreters: npm installs agents as scripts that run as
+/// `node /usr/local/bin/gemini`, with no node_modules path in the command line.
+pub fn identify_process(name: &str, args: &[String]) -> Option<&'static AgentDef> {
+    let base = |arg: &str| {
+        let file = arg.rsplit(['/', '\\']).next().unwrap_or(arg).to_lowercase();
+        file.strip_suffix(".exe")
+            .map_or(file.clone(), str::to_string)
+    };
+    let program = args.first().map(|a| base(a));
+    let interpreted = program.as_deref().is_some_and(|p| {
+        ["node", "bun", "deno", "sh", "bash"].contains(&p) || p.starts_with("python")
+    });
+    let script = interpreted
+        .then(|| args.iter().skip(1).find(|a| !a.starts_with('-')))
+        .flatten()
+        .map(|a| base(a));
+    std::iter::once(name.to_string())
+        .chain(program)
+        .chain(script)
+        .find_map(|exe| identify(&exe, args))
+}
+
 impl AgentDef {
     /// Whether its screen can be read; without rules only output activity is known.
     pub fn has_rules(&self) -> bool {
@@ -201,6 +223,17 @@ mod tests {
         unique.dedup();
         assert_eq!(ids.len(), unique.len());
         assert!(ids.contains(&"claude") && ids.contains(&"codex"));
+    }
+
+    #[test]
+    fn identifies_agents_run_by_an_interpreter() {
+        let args = |s: &str| s.split(' ').map(String::from).collect::<Vec<_>>();
+        let gemini = identify_process("node", &args("node /usr/local/bin/gemini --yolo"));
+        assert_eq!(gemini.unwrap().id, "gemini");
+        assert_eq!(identify_process("claude", &[]).unwrap().id, "claude");
+        // Only an interpreter's script counts, not any argument of any program.
+        assert!(identify_process("vim", &args("vim gemini")).is_none());
+        assert!(identify_process("node", &args("node server.js")).is_none());
     }
 
     #[test]

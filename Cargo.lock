@@ -4181,6 +4181,7 @@ version = "0.0.10"
 dependencies = [
  "ignore",
  "interprocess",
+ "libc",
  "notify",
  "portable-pty",
  "serde",

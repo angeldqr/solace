@@ -18,6 +18,9 @@ serde.workspace = true
 serde_json.workspace = true
 which = "8"
 
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
 [target.'cfg(windows)'.dependencies]
 widestring = "1"
 windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_System_Console", "Win32_System_LibraryLoader", "Win32_System_Registry", "Win32_UI_WindowsAndMessaging"] }

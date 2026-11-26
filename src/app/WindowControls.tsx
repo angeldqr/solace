@@ -2,10 +2,12 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { Minus, Square, X } from "lucide-react";
 import type { ReactNode } from "react";
 import { t } from "../shared/i18n";
+import { IS_MAC } from "../shared/platform";
 
 const appWindow = getCurrentWindow();
 
 export function WindowControls() {
+  if (IS_MAC) return null;
   return (
     <div className="flex h-full shrink-0">
       <WindowButton label={t("minimize")} onClick={() => appWindow.minimize()}>

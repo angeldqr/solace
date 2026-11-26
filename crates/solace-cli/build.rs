@@ -1,8 +1,9 @@
 // Product name and version in the Windows file properties: code signing requires every signed
 // binary to carry them, and they are what users see in Explorer and Task Manager.
 fn main() {
+    // `cfg(windows)` is the build machine; the target is checked too, for cross-builds.
     #[cfg(windows)]
-    {
+    if std::env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("windows") {
         let mut res = winresource::WindowsResource::new();
         res.set("ProductName", "Solace")
             .set("FileDescription", "Solace command-line interface")

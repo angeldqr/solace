@@ -2,11 +2,35 @@ use std::io::{self, BufRead, BufReader, Read, Write};
 use std::thread;
 
 use interprocess::local_socket::traits::ListenerExt as _;
-use interprocess::local_socket::{GenericNamespaced, ListenerOptions, Stream, ToNsName};
+use interprocess::local_socket::{ListenerOptions, Stream};
 use solace_core::orchestration::{Request, Response};
 
 /// Requests are small JSON lines; anything bigger is not from the CLI.
 const MAX_REQUEST: u64 = 1024 * 1024;
+
+/// Where this app's API listens, given a random nonce: a pipe name on Windows, guarded by its ACL;
+/// on Unix a socket file in a folder only this user may enter, since some systems ignore the
+/// permissions of the socket itself.
+pub fn endpoint(nonce: u64) -> String {
+    #[cfg(windows)]
+    {
+        let user = std::env::var("USERNAME").unwrap_or_default();
+        solace_core::orchestration::endpoint_name(&user, nonce)
+    }
+    #[cfg(unix)]
+    {
+        // XDG_RUNTIME_DIR is already private to the user; macOS's TMPDIR is per user too.
+        let base = std::env::var_os("XDG_RUNTIME_DIR")
+            .map(std::path::PathBuf::from)
+            .unwrap_or_else(std::env::temp_dir);
+        // SAFETY: getuid has no preconditions and cannot fail.
+        let uid = unsafe { libc::getuid() };
+        let socket = base
+            .join(format!("solace-{uid}"))
+            .join(format!("{nonce:016x}.sock"));
+        socket.to_string_lossy().into_owned()
+    }
+}
 
 /// Serves the orchestration API, one thread per connection so a long `agent.wait` never blocks
 /// other callers.
@@ -14,18 +38,23 @@ pub fn serve(
     name: &str,
     handle: impl Fn(Request) -> Response + Send + Sync + Clone + 'static,
 ) -> io::Result<()> {
-    let options = ListenerOptions::new().name(name.to_ns_name::<GenericNamespaced>()?);
     #[cfg(windows)]
     let options = {
+        use interprocess::local_socket::{GenericNamespaced, ToNsName};
         use interprocess::os::windows::local_socket::ListenerOptionsExt as _;
+        let options = ListenerOptions::new().name(name.to_ns_name::<GenericNamespaced>()?);
         use interprocess::os::windows::security_descriptor::SecurityDescriptor;
         // Only this user (the pipe's owner) and SYSTEM may connect: the API types into shells.
         let sddl = widestring::U16CString::from_str("D:P(A;;GA;;;SY)(A;;GA;;;OW)")
             .map_err(io::Error::other)?;
         options.security_descriptor(SecurityDescriptor::deserialize(&sddl)?)
     };
-    // shortcut: on Unix this is an abstract socket any local user can reach; switch to a 0600
-    // socket file under XDG_RUNTIME_DIR before shipping Linux builds.
+    #[cfg(unix)]
+    let options = {
+        use interprocess::local_socket::{GenericFilePath, ToFsName};
+        private_folder(std::path::Path::new(name))?;
+        ListenerOptions::new().name(name.to_fs_name::<GenericFilePath>()?)
+    };
     let listener = options.create_sync()?;
     thread::spawn(move || {
         for stream in listener.incoming().filter_map(Result::ok) {
@@ -35,6 +64,29 @@ pub fn serve(
             });
         }
     });
+    Ok(())
+}
+
+/// Creates the socket's folder for this user alone, and refuses one that someone else could enter.
+#[cfg(unix)]
+fn private_folder(socket: &std::path::Path) -> io::Result<()> {
+    use std::os::unix::fs::{DirBuilderExt, MetadataExt, PermissionsExt};
+    let dir = socket
+        .parent()
+        .ok_or_else(|| io::Error::other("the socket path has no folder"))?;
+    match std::fs::DirBuilder::new().mode(0o700).create(dir) {
+        Err(err) if err.kind() == io::ErrorKind::AlreadyExists => {}
+        other => other?,
+    }
+    let meta = std::fs::symlink_metadata(dir)?;
+    // SAFETY: getuid has no preconditions and cannot fail.
+    let uid = unsafe { libc::getuid() };
+    if !meta.is_dir() || meta.uid() != uid || meta.permissions().mode() & 0o077 != 0 {
+        return Err(io::Error::other(format!(
+            "{} is not a folder private to this user",
+            dir.display()
+        )));
+    }
     Ok(())
 }
 
@@ -51,4 +103,50 @@ fn respond(stream: Stream, handle: impl Fn(Request) -> Response) -> io::Result<(
     reply.push(b'\n');
     writer.write_all(&reply)?;
     writer.flush()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use interprocess::local_socket::prelude::*;
+
+    fn connect(name: &str) -> io::Result<Stream> {
+        #[cfg(windows)]
+        let name = {
+            use interprocess::local_socket::{GenericNamespaced, ToNsName};
+            name.to_ns_name::<GenericNamespaced>()?
+        };
+        #[cfg(unix)]
+        let name = {
+            use interprocess::local_socket::{GenericFilePath, ToFsName};
+            name.to_fs_name::<GenericFilePath>()?
+        };
+        Stream::connect(name)
+    }
+
+    #[test]
+    fn answers_a_request_on_its_endpoint() {
+        let name = endpoint(u64::from(std::process::id()) << 20 | 0xabc);
+        serve(&name, |_| Ok(serde_json::json!("pong"))).unwrap();
+        let stream = connect(&name).unwrap();
+        (&stream)
+            .write_all(b"{\"method\":\"pane.list\"}\n")
+            .unwrap();
+        let mut reply = String::new();
+        BufReader::new(&stream).read_line(&mut reply).unwrap();
+        assert_eq!(reply.trim(), r#"{"Ok":"pong"}"#);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn refuses_a_socket_folder_others_can_enter() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = std::env::temp_dir().join(format!("solace-open-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o755)).unwrap();
+        assert!(private_folder(&dir.join("x.sock")).is_err());
+        std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o700)).unwrap();
+        assert!(private_folder(&dir.join("x.sock")).is_ok());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 }

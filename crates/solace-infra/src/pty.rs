@@ -429,6 +429,9 @@ fn shell_args(shell: &Path) -> &'static [&'static str] {
         "pwsh" | "powershell" => &["-NoLogo"],
         // A login shell reads the user's profile, as Git Bash's own window does.
         "bash" => &["--login", "-i"],
+        // Started from the Dock or a launcher, the app's own PATH is minimal; the login profile
+        // brings the user's (Homebrew, ~/.local/bin, version managers).
+        "zsh" | "fish" => &["-l"],
         _ => &[],
     }
 }

@@ -2,6 +2,7 @@ import { Plus, Settings, X } from "lucide-react";
 import type { ReactNode } from "react";
 import { t } from "../../shared/i18n";
 import { api, type Space } from "../../shared/ipc";
+import { IS_MAC } from "../../shared/platform";
 import { useSession } from "../../shared/session";
 import { IconButton } from "../../shared/ui/IconButton";
 import { AgentsList } from "../agents/AgentsList";
@@ -14,7 +15,10 @@ export function Sidebar() {
   const view = useSession((s) => s.view);
   return (
     <aside className="flex w-[248px] shrink-0 flex-col border-line border-r">
-      <div data-tauri-drag-region className="flex h-11 shrink-0 items-center gap-2 px-4">
+      <div
+        data-tauri-drag-region
+        className={`flex h-11 shrink-0 items-center gap-2 ${IS_MAC ? "pr-4 pl-20" : "px-4"}`}
+      >
         <img src="/solace.svg" alt="" className="pointer-events-none size-5" />
         <span className="pointer-events-none font-semibold text-[13px] tracking-tight">Solace</span>
       </div>

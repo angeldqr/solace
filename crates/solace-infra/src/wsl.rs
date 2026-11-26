@@ -206,19 +206,7 @@ fn parse(out: &str) -> Vec<LinuxProcess> {
 /// By process name, else by command: npm installs agents as scripts that run as
 /// `node /usr/local/bin/gemini`, with no node_modules path in the command line.
 fn identify(process: &LinuxProcess) -> Option<&'static AgentDef> {
-    let base = |arg: &String| arg.rsplit('/').next().unwrap_or(arg).to_string();
-    let program = process.args.first().map(base);
-    let interpreted = program.as_deref().is_some_and(|p| {
-        ["node", "bun", "deno", "sh", "bash"].contains(&p) || p.starts_with("python")
-    });
-    let script = interpreted
-        .then(|| process.args.iter().skip(1).find(|a| !a.starts_with('-')))
-        .flatten()
-        .map(base);
-    [Some(process.name.clone()), program, script]
-        .into_iter()
-        .flatten()
-        .find_map(|exe| agents::identify(&exe, &process.args))
+    agents::identify_process(&process.name, &process.args)
 }
 
 /// Like the Windows scan: closest to the pane's shell wins, so an agent's helpers never do.

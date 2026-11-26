@@ -1,0 +1,30 @@
+{
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "Solace",
+        "width": 1280,
+        "height": 800,
+        "minWidth": 720,
+        "minHeight": 480,
+        "center": true,
+        "theme": "Dark",
+        "backgroundColor": "#000000",
+        "decorations": true,
+        "titleBarStyle": "Overlay",
+        "hiddenTitle": true
+      }
+    ]
+  },
+  "bundle": {
+    "targets": ["app", "dmg"],
+    "resources": {
+      "binaries/solace": "bin/solace"
+    },
+    "macOS": {
+      "signingIdentity": "-",
+      "minimumSystemVersion": "11.0"
+    }
+  }
+}

@@ -62,7 +62,7 @@ impl Processes {
             .filter_map(|(&pid, process)| {
                 let depth = depth_below(processes, pid, root)?;
                 let exe = process.name().to_string_lossy();
-                Some((depth, agents::identify(&exe, &args(process))?))
+                Some((depth, agents::identify_process(&exe, &args(process))?))
             })
             .min_by_key(|(depth, _)| *depth)
             .map(|(_, agent)| agent)

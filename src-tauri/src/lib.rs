@@ -37,14 +37,11 @@ pub(crate) fn endpoint() -> &'static str {
     static ENDPOINT: std::sync::OnceLock<String> = std::sync::OnceLock::new();
     ENDPOINT.get_or_init(|| {
         use std::hash::{BuildHasher, Hasher};
-        let user = std::env::var("USERNAME")
-            .or_else(|_| std::env::var("USER"))
-            .unwrap_or_default();
         // RandomState is seeded from the OS: enough to make the name unguessable.
         let nonce = std::collections::hash_map::RandomState::new()
             .build_hasher()
             .finish();
-        solace_core::orchestration::endpoint_name(&user, nonce)
+        solace_infra::ipc::endpoint(nonce)
     })
 }
 

@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use std::process::ExitCode;
 
 use clap::{Parser, Subcommand};
-use interprocess::local_socket::{GenericNamespaced, Stream, ToNsName, prelude::*};
+use interprocess::local_socket::{Stream, prelude::*};
 use solace_core::agents::hooks::{HookVerdict, claude_hook};
 use solace_core::orchestration::{Request, Response};
 use solace_core::terminals::{Direction, PaneId};
@@ -174,10 +174,18 @@ fn call(request: &Request) -> Result<serde_json::Value, String> {
         .ok()
         .filter(|name| !name.is_empty())
         .ok_or("not inside a Solace terminal (SOLACE_PIPE is not set)")?;
-    let name = name
-        .as_str()
-        .to_ns_name::<GenericNamespaced>()
-        .map_err(|e| e.to_string())?;
+    // A pipe name on Windows, a socket path on Unix (see solace_infra::ipc::endpoint).
+    #[cfg(windows)]
+    let name = {
+        use interprocess::local_socket::{GenericNamespaced, ToNsName};
+        name.as_str().to_ns_name::<GenericNamespaced>()
+    };
+    #[cfg(unix)]
+    let name = {
+        use interprocess::local_socket::{GenericFilePath, ToFsName};
+        name.as_str().to_fs_name::<GenericFilePath>()
+    };
+    let name = name.map_err(|e| e.to_string())?;
     let stream = Stream::connect(name)
         .map_err(|err| format!("could not reach Solace ({err}); is the app still running?"))?;
     let mut line = serde_json::to_vec(request).map_err(|e| e.to_string())?;

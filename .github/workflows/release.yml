@@ -4,6 +4,8 @@ on:
   push:
     # Numeric versions only: WiX (MSI) rejects non-numeric pre-release suffixes.
     tags: ["v[0-9]+.[0-9]+.[0-9]+"]
+  # A manual run builds every platform without releasing anything, to try the bundles out.
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -23,7 +25,9 @@ jobs:
         shell: bash
         run: |
           version=$(grep -m1 '^version' Cargo.toml | cut -d'"' -f2)
-          [ "${GITHUB_REF_NAME}" = "v${version}" ] || { echo "::error::tag ${GITHUB_REF_NAME} != v${version}"; exit 1; }
+          if [ "$GITHUB_REF_TYPE" = tag ] && [ "$GITHUB_REF_NAME" != "v${version}" ]; then
+            echo "::error::tag ${GITHUB_REF_NAME} != v${version}"; exit 1
+          fi
           echo "version=${version}" >> "$GITHUB_OUTPUT"
       - uses: pnpm/action-setup@v6
       - uses: actions/setup-node@v7
@@ -114,10 +118,88 @@ jobs:
             pnpm tauri signer sign "$f"
           done
 
-      - name: Write latest.json
-        run: node scripts/release-manifest.mjs ${{ steps.version.outputs.version }} target/release/bundle latest.json
-      - name: Create the draft release
+      - name: Collect the release files
         shell: bash
+        run: |
+          mkdir release
+          cp target/release/bundle/nsis/*-setup.exe target/release/bundle/nsis/*-setup.exe.sig \
+            target/release/bundle/msi/*.msi target/release/bundle/msi/*.msi.sig release/
+      - uses: actions/upload-artifact@v7
+        with:
+          name: release-windows
+          path: release
+
+  unix:
+    strategy:
+      matrix:
+        include:
+          # The oldest hosted Ubuntu: an AppImage runs on distributions at least as new as its
+          # build machine.
+          - os: ubuntu-22.04
+            name: linux
+          # Apple Silicon only; Intel Macs are not built.
+          - os: macos-latest
+            name: macos
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7
+      - name: Version
+        id: version
+        run: echo "version=$(grep -m1 '^version' Cargo.toml | cut -d'"' -f2)" >> "$GITHUB_OUTPUT"
+      - name: Linux libraries Tauri builds against
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev patchelf
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+      - uses: Swatinem/rust-cache@v2
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+      - run: node scripts/build-cli.mjs
+      - run: cargo test --locked --workspace
+      - run: pnpm tauri build --no-bundle
+      # As on Windows, only the bundling step sees the updater key.
+      - run: pnpm tauri bundle
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+      - name: Collect the release files
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          mkdir release
+          if [ "$RUNNER_OS" = Linux ]; then
+            cp target/release/bundle/appimage/*.AppImage target/release/bundle/appimage/*.AppImage.sig \
+              target/release/bundle/deb/*.deb release/
+          else
+            cp target/release/bundle/dmg/*.dmg release/
+            # The updater bundle has no version in its name; every release needs a distinct one.
+            cp target/release/bundle/macos/Solace.app.tar.gz "release/Solace_${VERSION}_aarch64.app.tar.gz"
+            cp target/release/bundle/macos/Solace.app.tar.gz.sig "release/Solace_${VERSION}_aarch64.app.tar.gz.sig"
+          fi
+      - uses: actions/upload-artifact@v7
+        with:
+          name: release-${{ matrix.name }}
+          path: release
+
+  publish:
+    needs: [windows, unix]
+    if: github.ref_type == 'tag'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: release-*
+          path: release
+          merge-multiple: true
+      - name: Write latest.json
+        run: node scripts/release-manifest.mjs "${GITHUB_REF_NAME#v}" release release/latest.json
+      - name: Create the draft release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -126,7 +208,5 @@ jobs:
             gh release delete "${GITHUB_REF_NAME}" --yes
           fi
           gh release create "${GITHUB_REF_NAME}" --draft --title "Solace ${GITHUB_REF_NAME}" \
-            --notes "Download \`Solace_*_x64-setup.exe\` (recommended) or the \`.msi\` installer below." \
-            target/release/bundle/nsis/*-setup.exe target/release/bundle/nsis/*-setup.exe.sig \
-            target/release/bundle/msi/*.msi target/release/bundle/msi/*.msi.sig \
-            latest.json
+            --notes "Windows: \`Solace_*_x64-setup.exe\`. macOS (Apple Silicon): \`.dmg\`. Linux: \`.AppImage\` or \`.deb\`." \
+            release/*
