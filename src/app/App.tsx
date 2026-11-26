@@ -19,6 +19,8 @@ import { t } from "../shared/i18n";
 import { api, type Space } from "../shared/ipc";
 import { matches } from "../shared/keys";
 import { activeSpace, activeTab, useSession } from "../shared/session";
+import { Button } from "../shared/ui/Button";
+import { Kbd } from "../shared/ui/Kbd";
 import { Tooltip } from "../shared/ui/Tooltip";
 import { StatusBar } from "./StatusBar";
 import { WindowControls } from "./WindowControls";
@@ -163,21 +165,22 @@ function EmptyState(props: {
   onAction: () => unknown;
 }) {
   return (
-    <div className="flex h-full flex-col items-center justify-center gap-5 pb-11 text-center">
+    <div className="flex h-full flex-col items-center justify-center gap-6 pb-11 text-center">
       <img src="/solace.svg" alt="" className="size-14" />
-      <div className="space-y-1.5">
-        <h1 className="font-medium text-lg text-fg tracking-tight">{props.title}</h1>
-        {props.body && <p className="max-w-sm text-fg-muted leading-relaxed">{props.body}</p>}
+      <div className="space-y-2">
+        <h1 className="font-semibold text-2xl text-fg tracking-tight">{props.title}</h1>
+        {props.body && (
+          <p className="max-w-md text-fg-muted text-sm leading-relaxed">{props.body}</p>
+        )}
       </div>
-      <button
-        type="button"
-        onClick={() => void props.onAction()}
-        className="flex h-8 items-center gap-2 rounded-md bg-primary px-3 font-medium text-on-primary transition-[filter] duration-150 hover:brightness-110 [&>svg]:size-3.5"
-      >
+      <Button variant="primary" size="md" onClick={() => void props.onAction()}>
         {props.icon}
         {props.action}
-        <kbd className="ml-1 font-sans text-2xs text-on-primary/60">{props.keys}</kbd>
-      </button>
+        <Kbd
+          keys={props.keys}
+          className="border-on-primary/25 bg-on-primary/10 text-on-primary/80"
+        />
+      </Button>
     </div>
   );
 }

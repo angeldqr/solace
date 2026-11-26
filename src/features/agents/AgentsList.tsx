@@ -21,7 +21,7 @@ export function AgentsList() {
   const now = useNow();
 
   if (list.length === 0) {
-    return <p className="px-4 text-2xs text-fg-subtle">{t("agentsEmpty")}</p>;
+    return <p className="px-4 text-fg-subtle text-xs">{t("agentsEmpty")}</p>;
   }
   return (
     <div className="flex flex-col gap-2 px-2">
@@ -30,7 +30,7 @@ export function AgentsList() {
         if (agents.length === 0) return null;
         return (
           <section key={status} aria-label={t(title)}>
-            <h3 className="flex h-6 items-center gap-1.5 px-2 text-2xs text-fg-subtle">
+            <h3 className="flex h-7 items-center gap-1.5 px-2 text-fg-subtle text-xs">
               {t(title)}
               <span className="text-fg-subtle/70">{agents.length}</span>
             </h3>
@@ -64,12 +64,12 @@ function AgentRow(props: {
     <button
       type="button"
       onClick={() => void api.paneFocus(props.agent.pane)}
-      className="flex h-8 w-full items-center gap-2.5 rounded-md px-2 text-left text-fg-muted transition-colors duration-150 hover:bg-hover hover:text-fg"
+      className="flex h-9 w-full items-center gap-2.5 rounded-lg px-2 text-left text-body text-fg-muted transition-colors duration-150 hover:bg-hover hover:text-fg"
     >
       <AgentIcon agent={props.agent.agent} className="size-4" />
       <span className="truncate">{props.agent.label ?? props.agent.name}</span>
-      {props.space && <span className="truncate text-2xs text-fg-subtle">{props.space}</span>}
-      <span className="ml-auto shrink-0 text-2xs text-fg-subtle tabular-nums">{props.elapsed}</span>
+      {props.space && <span className="truncate text-fg-subtle text-xs">{props.space}</span>}
+      <span className="ml-auto shrink-0 text-fg-subtle text-xs tabular-nums">{props.elapsed}</span>
       <StatusDot status={props.status} />
     </button>
   );

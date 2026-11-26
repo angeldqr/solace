@@ -20,6 +20,11 @@ const en = {
   nextTab: "Next tab",
   previousTab: "Previous tab",
   commands: "Commands",
+  groupTerminals: "Terminals",
+  groupLayout: "Layout",
+  groupPanels: "Panels",
+  groupApp: "App",
+  resizeSidebar: "Resize sidebar",
   searchCommands: "Search commands",
   noMatches: "No matching commands",
   thisComputer: "This computer",
@@ -144,6 +149,11 @@ const es: Messages = {
   nextTab: "Pestaña siguiente",
   previousTab: "Pestaña anterior",
   commands: "Comandos",
+  groupTerminals: "Terminales",
+  groupLayout: "Diseño",
+  groupPanels: "Paneles",
+  groupApp: "App",
+  resizeSidebar: "Cambiar tamaño de la barra lateral",
   searchCommands: "Buscar comandos",
   noMatches: "Ningún comando coincide",
   thisComputer: "Este equipo",
@@ -254,6 +264,9 @@ function pickLocale(): "en" | "es" {
   }
   return navigator.language.toLowerCase().startsWith("es") ? "es" : "en";
 }
+
+/** Exposed so a test can check both languages define the same keys. */
+export const dictionaries = { en, es };
 
 export const locale = pickLocale();
 const messages = locale === "es" ? es : en;

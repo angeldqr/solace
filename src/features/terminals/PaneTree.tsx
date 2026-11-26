@@ -115,23 +115,35 @@ function TerminalPane({ space, pane, focused }: { space: Space; pane: PaneId; fo
         focused ? "border-line-strong" : "border-line"
       }`}
     >
-      <header className="group flex h-7 shrink-0 items-center gap-2 border-line border-b pr-1 pl-2.5 text-2xs">
+      <header className="group flex h-7 shrink-0 items-center gap-2 border-line border-b pr-1 pl-2.5 text-xs">
         {agent ? (
-          <AgentIcon agent={agent.agent} />
+          <AgentIcon agent={agent.agent} className="size-4" />
         ) : (
-          <SquareTerminal className="size-3.5 shrink-0 text-fg-subtle" aria-hidden />
+          <SquareTerminal className="size-4 shrink-0 text-fg-subtle" aria-hidden />
         )}
-        <span className={focused ? "text-fg" : "text-fg-muted"}>{title}</span>
+        <span className={`font-medium ${focused ? "text-fg" : "text-fg-muted"}`}>{title}</span>
         {agent && <StatusDot status={statusOf(agent, done)} />}
         <span className="truncate text-fg-subtle">{space.root}</span>
         <div className="ml-auto flex opacity-0 transition-opacity duration-150 group-hover:opacity-100 focus-within:opacity-100">
-          <IconButton label={t("splitRight")} onClick={() => api.paneSplit(pane, "row")}>
+          <IconButton
+            label={t("splitRight")}
+            shortcut="Ctrl+Shift+D"
+            onClick={() => api.paneSplit(pane, "row")}
+          >
             <Columns2 aria-hidden />
           </IconButton>
-          <IconButton label={t("splitDown")} onClick={() => api.paneSplit(pane, "column")}>
+          <IconButton
+            label={t("splitDown")}
+            shortcut="Ctrl+Shift+E"
+            onClick={() => api.paneSplit(pane, "column")}
+          >
             <Rows2 aria-hidden />
           </IconButton>
-          <IconButton label={t("closeTerminal")} onClick={() => api.paneClose(pane)}>
+          <IconButton
+            label={t("closeTerminal")}
+            shortcut="Ctrl+Shift+W"
+            onClick={() => api.paneClose(pane)}
+          >
             <X aria-hidden />
           </IconButton>
         </div>

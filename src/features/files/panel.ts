@@ -17,7 +17,7 @@ interface PanelState {
 export const DEFAULT_WIDTH = 420;
 export const MIN_WIDTH = 280;
 const ABSOLUTE_MAX_WIDTH = 960;
-/** Evaluated at drag time: the panel never takes more than 60% of the window. */
+/** Resolved on every drag or key press (ResizeHandle takes the function): the panel never takes more than 60% of the window. */
 export const maxWidth = () => Math.min(ABSOLUTE_MAX_WIDTH, Math.round(window.innerWidth * 0.6));
 
 const STORAGE_KEY = "solace.panel";

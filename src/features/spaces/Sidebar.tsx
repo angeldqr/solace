@@ -1,26 +1,44 @@
-import { Plus, Settings, X } from "lucide-react";
+import { Command, Plus, Settings, X } from "lucide-react";
 import type { ReactNode } from "react";
 import { t } from "../../shared/i18n";
 import { api, type Space } from "../../shared/ipc";
 import { IS_MAC } from "../../shared/platform";
 import { useSession } from "../../shared/session";
 import { IconButton } from "../../shared/ui/IconButton";
+import { ResizeHandle } from "../../shared/ui/ResizeHandle";
+import { Tooltip } from "../../shared/ui/Tooltip";
 import { AgentsList } from "../agents/AgentsList";
-import { openFolder } from "../commands/commands";
+import { openFolder, PALETTE_KEYS, togglePalette } from "../commands/commands";
 import { openSettings } from "../settings/dialog";
+import {
+  DEFAULT_SIDEBAR_WIDTH,
+  MIN_SIDEBAR_WIDTH,
+  maxSidebarWidth,
+  useSidebar,
+} from "./sidebarWidth";
 
 const HUES = [264, 160, 30, 330, 200, 95];
 
 export function Sidebar() {
   const view = useSession((s) => s.view);
+  const width = useSidebar((s) => s.width);
   return (
-    <aside className="flex w-[248px] shrink-0 flex-col border-line border-r">
+    <aside style={{ width }} className="relative flex shrink-0 flex-col border-line border-r">
+      <ResizeHandle
+        side="right"
+        value={width}
+        min={MIN_SIDEBAR_WIDTH}
+        max={maxSidebarWidth}
+        label={t("resizeSidebar")}
+        onChange={(next) => useSidebar.setState({ width: next })}
+        onReset={() => useSidebar.setState({ width: DEFAULT_SIDEBAR_WIDTH })}
+      />
       <div
         data-tauri-drag-region
         className={`flex h-11 shrink-0 items-center gap-2 ${IS_MAC ? "pr-4 pl-20" : "px-4"}`}
       >
         <img src="/solace.svg" alt="" className="pointer-events-none size-5" />
-        <span className="pointer-events-none font-semibold text-body tracking-tight">Solace</span>
+        <span className="pointer-events-none font-semibold text-sm tracking-tight">Solace</span>
       </div>
       <SectionHeader title={t("spaces")}>
         <IconButton label={t("openFolder")} onClick={openFolder}>
@@ -37,22 +55,27 @@ export function Sidebar() {
           />
         ))}
         {view?.spaces.length === 0 && (
-          <p className="px-2 text-2xs text-fg-subtle">{t("noSpaces")}</p>
+          <p className="px-2 text-fg-subtle text-xs">{t("noSpaces")}</p>
         )}
       </nav>
       <div className="mt-auto border-line border-t pb-2">
         <SectionHeader title={t("agents")} />
         <AgentsList />
       </div>
-      <div className="border-line border-t p-2">
-        <button
-          type="button"
-          onClick={openSettings}
-          className="flex h-8 w-full items-center gap-2.5 rounded-md px-2 text-fg-muted transition-colors duration-150 hover:bg-hover hover:text-fg"
-        >
-          <Settings aria-hidden className="size-4" />
-          {t("settings")}
-        </button>
+      <div className="flex items-center gap-1 border-line border-t p-2">
+        <Tooltip label={t("settings")} shortcut="Ctrl+,">
+          <button
+            type="button"
+            onClick={openSettings}
+            className="flex h-8 flex-1 items-center gap-2.5 rounded-lg px-2 text-body text-fg-muted transition-colors duration-150 hover:bg-hover hover:text-fg"
+          >
+            <Settings aria-hidden className="size-4" />
+            {t("settings")}
+          </button>
+        </Tooltip>
+        <IconButton label={t("commands")} shortcut={PALETTE_KEYS} onClick={togglePalette}>
+          <Command aria-hidden />
+        </IconButton>
       </div>
     </aside>
   );
@@ -60,8 +83,8 @@ export function Sidebar() {
 
 function SectionHeader({ title, children }: { title: string; children?: ReactNode }) {
   return (
-    <div className="flex h-10 items-center justify-between pr-3 pl-4">
-      <h2 className="font-medium text-2xs text-fg-muted">{title}</h2>
+    <div className="flex h-9 items-center justify-between pr-2 pl-4">
+      <h2 className="font-medium text-fg-muted text-xs">{title}</h2>
       {children}
     </div>
   );
@@ -70,8 +93,8 @@ function SectionHeader({ title, children }: { title: string; children?: ReactNod
 function SpaceRow({ space, active, branch }: { space: Space; active: boolean; branch?: string }) {
   return (
     <div
-      className={`group relative flex h-8 items-center rounded-md transition-colors duration-150 ${
-        active ? "bg-selected text-fg" : "text-fg-muted hover:bg-hover hover:text-fg"
+      className={`group relative flex h-9 items-center rounded-lg transition-colors duration-150 ${
+        active ? "bg-selected font-medium text-fg" : "text-fg-muted hover:bg-hover hover:text-fg"
       }`}
     >
       <button
@@ -79,18 +102,18 @@ function SpaceRow({ space, active, branch }: { space: Space; active: boolean; br
         title={space.root}
         aria-current={active ? "page" : undefined}
         onClick={() => void api.spaceActivate(space.id)}
-        className="flex h-full min-w-0 flex-1 items-center gap-2.5 rounded-md px-2"
+        className="flex h-full min-w-0 flex-1 items-center gap-2.5 rounded-lg px-2 text-body"
       >
         <span
           aria-hidden
-          className="grid size-5 shrink-0 place-items-center rounded-[5px] font-semibold text-2xs text-white"
+          className="grid size-6 shrink-0 place-items-center rounded-md font-semibold text-white text-xs"
           style={{ background: `oklch(0.52 0.13 ${HUES[space.id % HUES.length]})` }}
         >
           {space.name.charAt(0).toUpperCase()}
         </span>
         <span className="truncate">{space.name}</span>
         {branch && (
-          <span className="ml-auto max-w-24 shrink-0 truncate text-2xs text-fg-subtle group-hover:invisible">
+          <span className="ml-auto max-w-24 shrink-0 truncate text-fg-subtle text-xs group-hover:invisible">
             {branch}
           </span>
         )}
