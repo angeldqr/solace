@@ -101,7 +101,7 @@ export function App() {
 
 /** Herdr-style switches for the right panel, next to the window controls. */
 function PanelToggles() {
-  const { open, tab } = usePanel();
+  const { open, tab, changes } = usePanel();
   const button = (which: "files" | "changes", shortcut: string, icon: React.ReactNode) => {
     const active = open && tab === which;
     return (
@@ -116,6 +116,13 @@ function PanelToggles() {
         >
           {icon}
           {t(which)}
+          {which === "changes" && open && changes > 0 && (
+            <span
+              className={`rounded-full px-1.5 text-2xs tabular-nums ${active ? "bg-primary/20 text-fg" : "bg-hover text-fg-muted"}`}
+            >
+              {changes}
+            </span>
+          )}
         </button>
       </Tooltip>
     );

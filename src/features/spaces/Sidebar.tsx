@@ -1,5 +1,6 @@
-import { Command, Plus, Settings, X } from "lucide-react";
+import { Command, GitBranch, Plus, Settings, X } from "lucide-react";
 import type { ReactNode } from "react";
+import { useAgents } from "../../shared/agents";
 import { t } from "../../shared/i18n";
 import { api, type Space } from "../../shared/ipc";
 import { IS_MAC } from "../../shared/platform";
@@ -22,6 +23,7 @@ const HUES = [264, 160, 30, 330, 200, 95];
 export function Sidebar() {
   const view = useSession((s) => s.view);
   const width = useSidebar((s) => s.width);
+  const agentCount = useAgents((s) => s.list.length);
   return (
     <aside style={{ width }} className="relative flex shrink-0 flex-col border-line border-r">
       <ResizeHandle
@@ -45,7 +47,10 @@ export function Sidebar() {
           <Plus aria-hidden />
         </IconButton>
       </SectionHeader>
-      <nav aria-label={t("spaces")} className="flex flex-col gap-px px-2">
+      <nav
+        aria-label={t("spaces")}
+        className="flex min-h-0 flex-1 flex-col gap-px overflow-y-auto px-2 pt-1 pb-2"
+      >
         {view?.spaces.map((space) => (
           <SpaceRow
             key={space.id}
@@ -58,9 +63,11 @@ export function Sidebar() {
           <p className="px-2 text-fg-subtle text-xs">{t("noSpaces")}</p>
         )}
       </nav>
-      <div className="mt-auto border-line border-t pb-2">
-        <SectionHeader title={t("agents")} />
-        <AgentsList />
+      <div className="flex min-h-0 flex-1 flex-col border-line border-t">
+        <SectionHeader title={t("agents")} count={agentCount} />
+        <div className="min-h-0 flex-1 overflow-y-auto pb-2">
+          <AgentsList />
+        </div>
       </div>
       <div className="flex items-center gap-1 border-line border-t p-2">
         <Tooltip label={t("settings")} shortcut="Ctrl+,">
@@ -81,10 +88,23 @@ export function Sidebar() {
   );
 }
 
-function SectionHeader({ title, children }: { title: string; children?: ReactNode }) {
+function SectionHeader({
+  title,
+  count,
+  children,
+}: {
+  title: string;
+  count?: number;
+  children?: ReactNode;
+}) {
   return (
     <div className="flex h-9 items-center justify-between pr-2 pl-4">
-      <h2 className="font-medium text-fg-muted text-xs">{title}</h2>
+      <h2 className="flex items-center gap-1.5 font-medium text-fg-muted text-xs">
+        {title}
+        {count !== undefined && count > 0 && (
+          <span className="text-fg-subtle/70 tabular-nums">{count}</span>
+        )}
+      </h2>
       {children}
     </div>
   );
@@ -97,24 +117,26 @@ function SpaceRow({ space, active, branch }: { space: Space; active: boolean; br
         active ? "bg-selected font-medium text-fg" : "text-fg-muted hover:bg-hover hover:text-fg"
       }`}
     >
+      {active && (
+        <span aria-hidden className="absolute inset-y-2 left-0 w-0.5 rounded-full bg-primary" />
+      )}
       <button
         type="button"
         title={space.root}
         aria-current={active ? "page" : undefined}
         onClick={() => void api.spaceActivate(space.id)}
-        className="flex h-full min-w-0 flex-1 items-center gap-2.5 rounded-lg px-2 text-body"
+        className="flex h-full min-w-0 flex-1 items-center gap-2.5 rounded-lg px-3 text-body"
       >
         <span
           aria-hidden
-          className="grid size-6 shrink-0 place-items-center rounded-md font-semibold text-white text-xs"
-          style={{ background: `oklch(0.52 0.13 ${HUES[space.id % HUES.length]})` }}
-        >
-          {space.name.charAt(0).toUpperCase()}
-        </span>
+          className="size-1.5 shrink-0 rounded-full"
+          style={{ background: `oklch(0.68 0.15 ${HUES[space.id % HUES.length]})` }}
+        />
         <span className="truncate">{space.name}</span>
         {branch && (
-          <span className="ml-auto max-w-24 shrink-0 truncate text-fg-subtle text-xs group-hover:invisible">
-            {branch}
+          <span className="ml-auto flex max-w-28 shrink-0 items-center gap-1 text-fg-subtle text-xs group-hover:invisible">
+            <GitBranch aria-hidden className="size-3 shrink-0" />
+            <span className="truncate">{branch}</span>
           </span>
         )}
       </button>

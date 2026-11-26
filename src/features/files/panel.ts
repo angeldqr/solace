@@ -13,6 +13,8 @@ interface PanelState {
   wide: boolean;
   /** Bumped when files in the active space change on disk, so open views refetch. */
   version: number;
+  /** Not persisted: pending changes count, shown on the top-bar Changes button. */
+  changes: number;
 }
 
 export const DEFAULT_WIDTH = 420;
@@ -43,6 +45,7 @@ export const usePanel = create<PanelState>(() => ({
       : DEFAULT_WIDTH,
   wide: false,
   version: 0,
+  changes: 0,
 }));
 
 usePanel.subscribe(({ open, tab, width }) =>

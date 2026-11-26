@@ -6,7 +6,7 @@
 /* Design tokens. Dark-first; values start from T3 Code's quiet black palette. */
 @theme {
   --font-sans: "Inter Variable", "Segoe UI", system-ui, sans-serif;
-  --font-mono: "Cascadia Mono", Consolas, ui-monospace, monospace;
+  --font-mono: "JetBrains Mono Variable", "Cascadia Mono", Consolas, ui-monospace, monospace;
 
   --color-canvas: #000;
   --color-surface: color-mix(in oklab, var(--color-neutral-950) 97%, white);
