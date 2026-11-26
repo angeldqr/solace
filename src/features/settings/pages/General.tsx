@@ -4,7 +4,7 @@ import { api } from "../../../shared/ipc";
 import { Select } from "../../../shared/ui/Select";
 import { Switch } from "../../../shared/ui/Switch";
 import { Card, Hint, Row, Section } from "../layout";
-import { type Language, updateSettings, useSettings } from "../settings";
+import { flushSettings, type Language, updateSettings, useSettings } from "../settings";
 
 export function General() {
   const language = useSettings((s) => s.language);
@@ -26,6 +26,7 @@ export function General() {
               onChange={(value) => {
                 updateSettings({ language: value });
                 // Text is chosen at load; terminals and agents survive the reload.
+                flushSettings();
                 location.reload();
               }}
             />

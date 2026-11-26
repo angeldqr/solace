@@ -12,8 +12,8 @@ const translate = (key: string) => words[key] ?? "zzz";
 
 describe("filterPages", () => {
   it("returns every page for an empty query", () => {
-    expect(filterPages("", translate)).toHaveLength(7);
-    expect(filterPages("   ", translate)).toHaveLength(7);
+    expect(filterPages("", translate)).toHaveLength(8);
+    expect(filterPages("   ", translate)).toHaveLength(8);
   });
 
   it("matches row keywords, ignoring case", () => {

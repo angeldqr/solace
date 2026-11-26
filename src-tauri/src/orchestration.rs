@@ -95,6 +95,10 @@ pub fn handle(app: &AppHandle, request: Request) -> Response {
             });
             Ok(json!({ "pane": pane }))
         }
+        Request::UsageReport { pane, status } => {
+            crate::usage::report(app, pane, &status);
+            Ok(json!({}))
+        }
     }
 }
 

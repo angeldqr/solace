@@ -1,5 +1,5 @@
 import { FolderOpen, GitCompare, PanelRight, SquareTerminal } from "lucide-react";
-import { lazy, Suspense, useEffect } from "react";
+import { lazy, Suspense, useEffect, useState } from "react";
 import { CommandPalette } from "../features/commands/CommandPalette";
 import {
   commandFor,
@@ -10,11 +10,13 @@ import {
   togglePalette,
 } from "../features/commands/commands";
 import { togglePanel, usePanel } from "../features/files/panel";
-import { SettingsDialog } from "../features/settings/SettingsDialog";
+import { useSettingsDialog } from "../features/settings/dialog";
+import { setPreviewCss, updateSettings } from "../features/settings/settings";
 import { Sidebar } from "../features/spaces/Sidebar";
 import { PaneTree } from "../features/terminals/PaneTree";
 import { setKeyInterceptor } from "../features/terminals/registry";
 import { TabBar } from "../features/terminals/TabBar";
+import { UsageButton } from "../features/usage/UsageButton";
 import { t } from "../shared/i18n";
 import { api, type Space } from "../shared/ipc";
 import { matches } from "../shared/keys";
@@ -30,6 +32,25 @@ const RightPanel = lazy(() =>
   import("../features/files/RightPanel").then((m) => ({ default: m.RightPanel })),
 );
 
+const SettingsDialog = lazy(() =>
+  import("../features/settings/SettingsDialog").then((m) => ({ default: m.SettingsDialog })),
+);
+
+/** Loads the settings chunk the first time the dialog is asked for, then keeps it mounted. */
+function Settings() {
+  const requested = useSettingsDialog((s) => s.open);
+  const [loaded, setLoaded] = useState(false);
+  useEffect(() => {
+    if (requested) setLoaded(true);
+  }, [requested]);
+  if (!loaded) return null;
+  return (
+    <Suspense fallback={null}>
+      <SettingsDialog />
+    </Suspense>
+  );
+}
+
 setKeyInterceptor(isAppShortcut);
 
 function useShortcuts() {
@@ -43,6 +64,13 @@ function useShortcuts() {
         (event.key === "F5" || (event.ctrlKey && event.key.toLowerCase() === "r"))
       ) {
         event.preventDefault();
+        return;
+      }
+      // Escape hatch for custom CSS that hides the UI, so no menu is needed to undo it.
+      if (matches(event, "Ctrl+Alt+Shift+Backspace")) {
+        event.preventDefault();
+        setPreviewCss(null);
+        updateSettings({ customCss: "" });
         return;
       }
       // Holding a shortcut must not open or close a pane per auto-repeat.
@@ -94,7 +122,7 @@ export function App() {
       </div>
       <StatusBar />
       <CommandPalette />
-      <SettingsDialog />
+      <Settings />
     </div>
   );
 }
@@ -129,6 +157,7 @@ function PanelToggles() {
   };
   return (
     <div className="mr-2 flex items-center gap-1">
+      <UsageButton />
       {button("files", "Ctrl+Shift+B", <PanelRight aria-hidden />)}
       {button("changes", "Ctrl+Shift+G", <GitCompare aria-hidden />)}
     </div>

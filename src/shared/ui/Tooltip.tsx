@@ -18,7 +18,7 @@ export function Tooltip({
       <BaseTooltip.Trigger render={children} />
       <BaseTooltip.Portal>
         <BaseTooltip.Positioner sideOffset={6} className="z-[60]">
-          <BaseTooltip.Popup className="flex items-center gap-2 rounded-md border border-line bg-surface px-2 py-1 text-fg text-xs shadow-black/40 shadow-lg transition-opacity duration-100 data-ending-style:opacity-0 data-starting-style:opacity-0">
+          <BaseTooltip.Popup className="flex items-center gap-2 rounded-md border border-line bg-surface px-2 py-1 text-fg text-xs shadow-black/40 shadow-lg transition-opacity duration-(--motion-duration) data-ending-style:opacity-0 data-starting-style:opacity-0">
             {label}
             {shortcut && <Kbd keys={shortcut} />}
           </BaseTooltip.Popup>

@@ -37,7 +37,7 @@ export function Select<T extends string>({
       </BaseSelect.Trigger>
       <BaseSelect.Portal>
         <BaseSelect.Positioner sideOffset={4} alignItemWithTrigger={false} className="z-50">
-          <BaseSelect.Popup className="glass min-w-(--anchor-width) rounded-lg border border-line p-1 shadow-black/40 shadow-xl outline-none transition-[opacity,scale] duration-150 data-ending-style:opacity-0 data-starting-style:scale-[0.98] data-starting-style:opacity-0">
+          <BaseSelect.Popup className="glass min-w-(--anchor-width) rounded-lg border border-line p-1 shadow-black/40 shadow-xl outline-none transition-[opacity,scale] duration-(--motion-duration) data-ending-style:opacity-0 data-starting-style:scale-[0.98] data-starting-style:opacity-0">
             {options.map((o) => (
               <BaseSelect.Item
                 key={o.value}

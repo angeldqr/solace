@@ -4,6 +4,7 @@ import { t } from "../../shared/i18n";
 import { api, type Change, type SpaceId } from "../../shared/ipc";
 import { Button } from "../../shared/ui/Button";
 import { IconButton } from "../../shared/ui/IconButton";
+import { updateSettings, useSettings } from "../settings/settings";
 import { FileIcon } from "./fileIcons";
 import { slash } from "./useChanges";
 import { useOnDisk } from "./useOnDisk";
@@ -12,7 +13,6 @@ const PatchViewer = lazy(() => import("./PatchViewer"));
 
 /** Longer patches ask before rendering: highlighting thousands of lines freezes the panel. */
 const MAX_DIFF_LINES = 4000;
-const STYLE_KEY = "solace.diffStyle";
 
 export function DiffView({
   space,
@@ -23,16 +23,14 @@ export function DiffView({
   change: Change;
   onBack: () => void;
 }) {
+  const ignoreWs = useSettings((s) => s.diffIgnoreWhitespace);
   const { data, error } = useOnDisk(
-    () => api.gitDiff(space, change.path, change.from, change.status === "U"),
-    `${space}:${change.status}:${change.path}`,
+    () => api.gitDiff(space, change.path, change.from, change.status === "U", ignoreWs),
+    `${space}:${change.status}:${change.path}:${ignoreWs}`,
   );
-  const [split, setSplit] = useState(() => localStorage.getItem(STYLE_KEY) === "split");
+  const split = useSettings((s) => s.diffLayout) === "split";
   const [forced, setForced] = useState(false);
-  const choose = (value: boolean) => {
-    setSplit(value);
-    localStorage.setItem(STYLE_KEY, value ? "split" : "unified");
-  };
+  const choose = (value: boolean) => updateSettings({ diffLayout: value ? "split" : "unified" });
 
   const path = slash(change.path);
   const slashAt = path.lastIndexOf("/");
@@ -82,7 +80,9 @@ export function DiffView({
       {error !== undefined ? (
         <p className="px-3 py-3 text-body text-fg-subtle">{error}</p>
       ) : data === undefined ? null : !data.trim() ? (
-        <p className="px-3 py-3 text-body text-fg-subtle">{t("noTextDiff")}</p>
+        <p className="px-3 py-3 text-body text-fg-subtle">
+          {t(ignoreWs ? "onlyWhitespaceChanges" : "noTextDiff")}
+        </p>
       ) : tooLong ? (
         <div className="flex flex-col items-start gap-3 px-3 py-3 text-body text-fg-subtle">
           {t("diffTruncated")}

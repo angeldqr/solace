@@ -37,7 +37,7 @@ function Panel({ space }: { space: Space }) {
     <aside
       aria-labelledby="right-panel-title"
       style={{ width: panelWidth(width, wide, sidebar) }}
-      className="@container relative mb-2 mr-2 flex shrink-0 flex-col rounded-lg border border-line bg-pane"
+      className="@container starting:translate-x-2 starting:opacity-0 relative mb-2 mr-2 flex shrink-0 flex-col rounded-lg border border-line bg-pane transition-[opacity,translate] duration-(--motion-duration)"
     >
       <ResizeHandle
         side="left"

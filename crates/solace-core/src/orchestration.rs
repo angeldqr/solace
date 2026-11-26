@@ -64,6 +64,12 @@ pub enum Request {
         session: String,
         state: Option<crate::agents::AgentState>,
     },
+    /// From Claude Code's status line: the raw status JSON, which carries the rate limits.
+    #[serde(rename = "usage.report")]
+    UsageReport {
+        pane: Option<PaneId>,
+        status: serde_json::Value,
+    },
 }
 
 pub type Response = Result<serde_json::Value, String>;
@@ -81,5 +87,17 @@ mod tests {
         )
         .unwrap();
         assert!(matches!(parsed, Request::AgentPrompt { wait: true, .. }));
+        let report = Request::UsageReport {
+            pane: Some(PaneId(3)),
+            status: serde_json::json!({"a": 1}),
+        };
+        let back: Request = serde_json::from_str(&serde_json::to_string(&report).unwrap()).unwrap();
+        assert!(matches!(
+            back,
+            Request::UsageReport {
+                pane: Some(PaneId(3)),
+                ..
+            }
+        ));
     }
 }

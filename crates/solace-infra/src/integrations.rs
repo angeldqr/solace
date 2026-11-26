@@ -30,13 +30,85 @@ impl ClaudePaths {
 /// The command Claude Code runs (in Git Bash on Windows) for every listened event. The `|| true`
 /// keeps any failure, such as Solace being uninstalled, from blocking Claude.
 fn hook_command(solace_exe: &Path) -> String {
-    let path = solace_exe.to_string_lossy();
+    format!(
+        "\"{}\" hook --source {MARKER} 2>/dev/null || true",
+        bash_path(solace_exe)
+    )
+}
+
+fn bash_path(exe: &Path) -> String {
+    let path = exe.to_string_lossy();
     // Tauri's paths are verbatim (`\\?\C:\...`), which bash can't run; forward slashes it can.
-    let path = path
-        .strip_prefix(r"\\?\")
+    path.strip_prefix(r"\\?\")
         .unwrap_or(&path)
-        .replace('\\', "/");
-    format!("\"{path}\" hook --source {MARKER} 2>/dev/null || true")
+        .replace('\\', "/")
+}
+
+/// Splits our status line from the user's own, which keeps running behind it.
+/// If Solace is gone, `|| cat` still passes the status JSON on to the user's command.
+const WRAP: &str = " 2>/dev/null || cat; } | {\n";
+
+/// Claude Code's status line command: ours alone, or ours teeing the status JSON into the user's
+/// `original`. The newlines keep a trailing `# comment` in the original from eating the brace.
+fn statusline_command(solace_exe: &Path, original: Option<&str>) -> String {
+    let exe = bash_path(solace_exe);
+    match original {
+        None => format!("\"{exe}\" statusline --source {MARKER} 2>/dev/null || true"),
+        Some(orig) => {
+            format!("{{ \"{exe}\" statusline --tee --source {MARKER}{WRAP}{orig}\n}}")
+        }
+    }
+}
+
+/// `None`: not ours, or a wrapper the user edited beyond recognition (left alone). `Some(None)`:
+/// we created it. `Some(Some(orig))`: wrapped around the user's.
+fn original_statusline(command: &str) -> Option<Option<String>> {
+    if !command.contains(MARKER) {
+        return None;
+    }
+    let Some((_, rest)) = command.split_once(WRAP) else {
+        return Some(None);
+    };
+    let orig = rest
+        .strip_suffix("\n}")
+        .or_else(|| rest.strip_suffix('}'))?;
+    Some(Some(orig.to_string()))
+}
+
+/// Puts the user's status line back, or removes the one we created.
+fn strip_statusline(settings: &mut Map<String, Value>) {
+    let original = settings
+        .get("statusLine")
+        .and_then(|s| s.get("command"))
+        .and_then(Value::as_str)
+        .and_then(original_statusline);
+    match original {
+        Some(Some(orig)) => settings["statusLine"]["command"] = Value::String(orig),
+        Some(None) => {
+            settings.remove("statusLine");
+        }
+        None => {}
+    }
+}
+
+/// Adds our status line, wrapping the user's if they have one; a status line without a command
+/// (or not an object) is left alone.
+fn add_statusline(settings: &mut Map<String, Value>, solace_exe: &Path) {
+    match settings.get_mut("statusLine") {
+        None => {
+            settings.insert(
+                "statusLine".into(),
+                json!({ "type": "command", "command": statusline_command(solace_exe, None) }),
+            );
+        }
+        Some(Value::Object(sl)) => {
+            if let Some(orig) = sl.get("command").and_then(Value::as_str) {
+                let wrapped = statusline_command(solace_exe, Some(orig));
+                sl.insert("command".into(), Value::String(wrapped));
+            }
+        }
+        Some(_) => {}
+    }
 }
 
 fn is_ours(hook: &Value) -> bool {
@@ -60,6 +132,7 @@ fn read_settings(path: &Path) -> io::Result<Map<String, Value>> {
 
 /// Removes Solace's hooks, dropping matcher groups and events left empty.
 fn strip_ours(settings: &mut Map<String, Value>) {
+    strip_statusline(settings);
     let Some(Value::Object(hooks)) = settings.get_mut("hooks") else {
         return;
     };
@@ -122,6 +195,7 @@ pub fn install_claude(paths: &ClaudePaths, solace_exe: &Path) -> io::Result<()> 
             .ok_or_else(|| io::Error::other(format!("hooks.{event} is not a list")))?
             .push(entry.clone());
     }
+    add_statusline(&mut settings, solace_exe);
     write_settings(&paths.settings, &settings)?;
     if let Some(dir) = paths.skill.parent() {
         fs::create_dir_all(dir)?;
@@ -198,6 +272,78 @@ mod tests {
         );
         assert!(!claude_installed(&paths));
         assert!(!paths.skill.exists());
+        fs::remove_dir_all(&home).unwrap();
+    }
+
+    #[test]
+    fn status_line_is_added_wrapped_and_restored() {
+        let home = std::env::temp_dir().join(format!("solace-claude-sl-{}", std::process::id()));
+        let paths = ClaudePaths::in_home(&home);
+        fs::create_dir_all(paths.settings.parent().unwrap()).unwrap();
+        let exe = &home.join("solace.exe");
+        let exe2 = &home.join("solace2.exe");
+        fs::write(exe, "").unwrap();
+        fs::write(exe2, "").unwrap();
+
+        // None of the user's own: added, then removed.
+        fs::write(&paths.settings, "{}").unwrap();
+        install_claude(&paths, exe).unwrap();
+        install_claude(&paths, exe).unwrap();
+        let sl = &read_settings(&paths.settings).unwrap()["statusLine"];
+        assert!(
+            sl["command"]
+                .as_str()
+                .unwrap()
+                .contains("statusline --source solace-hook")
+        );
+        uninstall_claude(&paths).unwrap();
+        assert!(
+            read_settings(&paths.settings)
+                .unwrap()
+                .get("statusLine")
+                .is_none()
+        );
+
+        // The user's own: wrapped once, restored exactly.
+        let mine = json!({ "statusLine": { "type": "command", "command": "a && b # note", "padding": 2 } });
+        fs::write(&paths.settings, mine.to_string()).unwrap();
+        install_claude(&paths, exe).unwrap();
+        install_claude(&paths, exe).unwrap();
+        install_claude(&paths, exe2).unwrap();
+        let settings = read_settings(&paths.settings).unwrap();
+        let command = settings["statusLine"]["command"].as_str().unwrap();
+        assert!(
+            command.starts_with("{ \"")
+                && command.contains("solace2.exe\" statusline --tee --source solace-hook")
+        );
+        assert!(command.contains("|| cat; } | {\n"));
+        // Text added after the closing brace: not ours to restore.
+        assert_eq!(original_statusline(&format!("{command} # mine")), None);
+        assert_eq!(
+            original_statusline(&command.replace("\n}", "}")),
+            Some(Some("a && b # note".to_string()))
+        );
+        assert_eq!(
+            original_statusline(command),
+            Some(Some("a && b # note".to_string()))
+        );
+        assert_eq!(settings["statusLine"]["padding"], 2);
+        uninstall_claude(&paths).unwrap();
+        assert_eq!(
+            read_settings(&paths.settings).unwrap()["statusLine"],
+            mine["statusLine"]
+        );
+
+        // No command to wrap: left alone.
+        let bare = json!({ "statusLine": { "type": "static" } });
+        fs::write(&paths.settings, bare.to_string()).unwrap();
+        install_claude(&paths, exe).unwrap();
+        assert_eq!(
+            read_settings(&paths.settings).unwrap()["statusLine"],
+            bare["statusLine"]
+        );
+
+        assert_eq!(original_statusline("echo hi"), None);
         fs::remove_dir_all(&home).unwrap();
     }
 

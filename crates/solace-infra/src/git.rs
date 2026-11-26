@@ -192,7 +192,15 @@ const MAX_TEXT: u64 = 1024 * 1024;
 /// Unified diff of one file against the last commit; untracked files diff against nothing.
 /// A renamed file (`from` its old path) diffs against its old contents, not against nothing.
 /// Capped at MAX_TEXT so a huge file can't freeze the UI.
-pub fn diff(dir: &Path, path: &str, from: Option<&str>, untracked: bool) -> Result<String, String> {
+pub fn diff(
+    dir: &Path,
+    path: &str,
+    from: Option<&str>,
+    untracked: bool,
+    ignore_whitespace: bool,
+) -> Result<String, String> {
+    // `-w` goes before the `--` separator in both branches.
+    let flags: &[&str] = if ignore_whitespace { &["-w"] } else { &[] };
     // literal: names like app/[id]/page.tsx must not act as glob patterns.
     let literal = |p: &str| format!(":(top,literal){p}");
     let mut paths = vec![literal(path)];
@@ -205,15 +213,11 @@ pub fn diff(dir: &Path, path: &str, from: Option<&str>, untracked: bool) -> Resu
         }
         let output = git(
             Path::new(top.trim()),
-            &[
-                "diff",
-                "--no-ext-diff",
-                "--no-textconv",
-                "--no-index",
-                "--",
-                "/dev/null",
-                path,
-            ],
+            &["diff", "--no-ext-diff", "--no-textconv", "--no-index"]
+                .into_iter()
+                .chain(flags.iter().copied())
+                .chain(["--", "/dev/null", path])
+                .collect::<Vec<_>>(),
         )
         .map_err(|e| e.to_string())?;
         // --no-index exits with 1 when the files differ, which is the expected case here.
@@ -232,10 +236,10 @@ pub fn diff(dir: &Path, path: &str, from: Option<&str>, untracked: bool) -> Resu
                 "--no-textconv",
                 "--ignore-submodules=dirty",
                 "-M",
-                "HEAD",
-                "--",
             ]
             .into_iter()
+            .chain(flags.iter().copied())
+            .chain(["HEAD", "--"])
             .chain(paths.iter().map(String::as_str))
             .collect::<Vec<_>>(),
         )?
@@ -381,11 +385,27 @@ mod tests {
         assert_eq!((new.status, new.additions), ('U', Some(2)));
 
         assert!(
-            diff(&root, "tracked.txt", None, false)
+            diff(&root, "tracked.txt", None, false, false)
                 .unwrap()
                 .contains("+three")
         );
-        assert!(diff(&root, "new.txt", None, true).unwrap().contains("+b"));
+        assert!(
+            diff(&root, "new.txt", None, true, false)
+                .unwrap()
+                .contains("+b")
+        );
+        // -w drops whitespace-only changes: "one " is still "one".
+        fs::write(root.join("tracked.txt"), "one \n").unwrap();
+        assert!(
+            diff(&root, "tracked.txt", None, false, false)
+                .unwrap()
+                .contains("-one")
+        );
+        assert!(
+            !diff(&root, "tracked.txt", None, false, true)
+                .unwrap()
+                .contains("-one")
+        );
         run(&["mv", "tracked.txt", "moved.txt"]);
         // Back to the committed text: a pure rename, which git must report as one.
         fs::write(root.join("moved.txt"), "one\n").unwrap();
@@ -395,7 +415,7 @@ mod tests {
             (moved.status, moved.from.as_deref()),
             ('R', Some("tracked.txt"))
         );
-        let renamed = diff(&root, "moved.txt", Some("tracked.txt"), false).unwrap();
+        let renamed = diff(&root, "moved.txt", Some("tracked.txt"), false, false).unwrap();
         assert!(renamed.contains("rename from tracked.txt"), "{renamed}");
         assert!(
             !renamed.contains("+one"),
@@ -457,7 +477,7 @@ mod tests {
         fs::write(root.join("n.md"), "x\n").unwrap();
 
         status(&root).unwrap();
-        diff(&root, "f.txt", None, false).unwrap();
+        diff(&root, "f.txt", None, false, false).unwrap();
         let ran: Vec<_> = fs::read_dir(&root)
             .unwrap()
             .filter_map(|e| e.ok()?.file_name().into_string().ok())

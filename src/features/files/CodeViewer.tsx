@@ -4,16 +4,9 @@ import { resolveTheme, useSettings, useSystemDark } from "../settings/settings";
 import { diffsStyle, UNSAFE_CSS } from "./diffsTheme";
 
 /** Loaded lazily, like PatchViewer: Shiki stays out of the main chunk until a file opens. */
-export default function CodeViewer({
-  name,
-  contents,
-  wrap,
-}: {
-  name: string;
-  contents: string;
-  wrap: boolean;
-}) {
+export default function CodeViewer({ name, contents }: { name: string; contents: string }) {
   const settings = useSettings();
+  const wrap = settings.wordWrap;
   const dark = resolveTheme(settings, useSystemDark()).dark;
   const file = useMemo(() => ({ name, contents }), [name, contents]);
   const options = useMemo(

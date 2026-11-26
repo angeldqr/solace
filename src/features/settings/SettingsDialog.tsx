@@ -1,6 +1,7 @@
 import { Dialog } from "@base-ui/react/dialog";
 import {
   Bot,
+  GitCompare,
   Info,
   Keyboard,
   Palette,
@@ -22,6 +23,7 @@ import { filterPages, PAGES, type PageId, RESETTABLE } from "./pages";
 import { About } from "./pages/About";
 import { Agents } from "./pages/Agents";
 import { Appearance } from "./pages/Appearance";
+import { Diffs } from "./pages/Diffs";
 import { General } from "./pages/General";
 import { Shell } from "./pages/Shell";
 import { Shortcuts } from "./pages/Shortcuts";
@@ -32,6 +34,7 @@ const ICONS: Record<PageId, ComponentType<{ className?: string }>> = {
   general: SlidersHorizontal,
   appearance: Palette,
   terminal: SquareTerminal,
+  diffs: GitCompare,
   agents: Bot,
   shell: TerminalIcon,
   shortcuts: Keyboard,
@@ -42,6 +45,7 @@ const CONTENT: Record<PageId, ComponentType> = {
   general: General,
   appearance: Appearance,
   terminal: Terminal,
+  diffs: Diffs,
   agents: Agents,
   shell: Shell,
   shortcuts: Shortcuts,
@@ -57,7 +61,7 @@ export function SettingsDialog() {
   return (
     <Dialog.Root open={open} onOpenChange={(next) => !next && close()}>
       <Dialog.Portal>
-        <Dialog.Backdrop className="backdrop-dim fixed inset-0 z-50 transition-opacity duration-200 data-ending-style:opacity-0 data-starting-style:opacity-0" />
+        <Dialog.Backdrop className="backdrop-dim fixed inset-0 z-50 transition-opacity duration-(--motion-duration) data-ending-style:opacity-0 data-starting-style:opacity-0" />
         <Dialog.Popup
           initialFocus={search}
           onKeyDown={(event) => {
@@ -69,7 +73,7 @@ export function SettingsDialog() {
             event.preventDefault();
             search.current?.focus();
           }}
-          className="glass light:bg-surface fixed top-1/2 left-1/2 z-50 flex h-[min(720px,88vh)] w-[min(1040px,94vw)] -translate-x-1/2 -translate-y-1/2 overflow-hidden rounded-2xl border border-line shadow-2xl shadow-black/50 outline-none transition-[opacity,scale] duration-200 ease-(--ease-drawer) data-ending-style:scale-[0.98] data-starting-style:scale-[0.98] data-ending-style:opacity-0 data-starting-style:opacity-0"
+          className="glass light:bg-surface fixed top-1/2 left-1/2 z-50 flex h-[min(720px,88vh)] w-[min(1040px,94vw)] -translate-x-1/2 -translate-y-1/2 overflow-hidden rounded-2xl border border-line shadow-2xl shadow-black/50 outline-none transition-[opacity,scale] duration-(--motion-duration) ease-(--ease-drawer) data-ending-style:scale-[0.98] data-starting-style:scale-[0.98] data-ending-style:opacity-0 data-starting-style:opacity-0"
         >
           <SettingsBody search={search} />
         </Dialog.Popup>

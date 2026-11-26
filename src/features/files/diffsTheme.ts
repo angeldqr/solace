@@ -1,4 +1,4 @@
-import { type Settings, terminalFontFamily } from "../settings/settings";
+import { fontStack, type Settings } from "../settings/settings";
 
 // Pane colour follows the app theme; added/removed lines are tinted from it.
 export const UNSAFE_CSS = `:host, pre, code { --diffs-bg: var(--color-pane); }
@@ -9,12 +9,17 @@ export const UNSAFE_CSS = `:host, pre, code { --diffs-bg: var(--color-pane); }
   --diffs-bg-deletion-emphasis-override: rgb(from var(--diffs-deletion-base) r g b / 0.12);
 }`;
 
-/** Font variables for @pierre/diffs components, from the user's terminal font settings. */
+/** Font and colour variables for @pierre/diffs components, from the code settings. They inherit
+ * into the library's shadow DOM, where the base colours read the *-color-override variables. */
 export function diffsStyle(settings: Settings) {
-  const size = Math.max(11, settings.fontSize - 1);
+  const size = settings.codeFontSize;
   return {
-    "--diffs-font-family": terminalFontFamily(settings.fontFamily),
+    "--diffs-font-family": fontStack(settings.codeFont, "mono"),
     "--diffs-font-size": `${size}px`,
     "--diffs-line-height": `${Math.round(size * 1.55)}px`,
+    ...(settings.diffColors === "blue-orange" && {
+      "--diffs-addition-color-override": "#3b82f6",
+      "--diffs-deletion-color-override": "#f97316",
+    }),
   } as React.CSSProperties;
 }

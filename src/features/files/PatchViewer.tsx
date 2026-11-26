@@ -16,6 +16,7 @@ export default function PatchViewer({ patch, split }: { patch: string; split: bo
   const settings = useSettings();
   const systemDark = useSystemDark();
   const dark = resolveTheme(settings, systemDark).dark;
+  const wrap = settings.wordWrap;
 
   const options = useMemo(
     () => ({
@@ -26,11 +27,12 @@ export default function PatchViewer({ patch, split }: { patch: string; split: bo
       disableFileHeader: true,
       tokenizeMaxLineLength: 1000,
       disableLineNumbers: false,
+      overflow: wrap ? ("wrap" as const) : ("scroll" as const),
       // The JS regex engine: no WASM, so the CSP needs no 'wasm-unsafe-eval'.
       preferredHighlighter: "shiki-js" as const,
       unsafeCSS: UNSAFE_CSS,
     }),
-    [split, dark],
+    [split, dark, wrap],
   );
 
   // shortcut: no virtualization/worker pool; "Show anyway" on huge diffs renders every line on the main thread. Add @pierre/diffs Virtualizer if that becomes a problem.

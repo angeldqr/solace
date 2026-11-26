@@ -5,6 +5,7 @@ export type PageId =
   | "general"
   | "appearance"
   | "terminal"
+  | "diffs"
   | "agents"
   | "shell"
   | "shortcuts"
@@ -43,6 +44,18 @@ export const PAGES: { id: PageId; title: MessageKey; keywords: MessageKey[] }[] 
       "contrastHint",
       "glass",
       "glassHint",
+      "customize",
+      "accentColour",
+      "accentDefault",
+      "typography",
+      "uiFont",
+      "codeFont",
+      "codeFontSize",
+      "fontSmoothing",
+      "animationSpeed",
+      "customCss",
+      "customCssHint",
+      "editThemeColours",
     ],
   },
   {
@@ -56,6 +69,11 @@ export const PAGES: { id: PageId; title: MessageKey; keywords: MessageKey[] }[] 
       "cursorBlink",
       "terminalSample",
     ],
+  },
+  {
+    id: "diffs",
+    title: "diffsPage",
+    keywords: ["diffStyle", "diffColours", "wrapLines", "ignoreWhitespace", "ignoreWhitespaceHint"],
   },
   {
     id: "agents",
@@ -94,7 +112,21 @@ export const PAGES: { id: PageId; title: MessageKey; keywords: MessageKey[] }[] 
 
 /** The settings each page's "Restore defaults" resets. */
 export const RESETTABLE: Partial<Record<PageId, (keyof Settings)[]>> = {
-  appearance: ["theme", "appearance", "uiScale", "contrast", "glassOpacity"],
+  appearance: [
+    "theme",
+    "appearance",
+    "uiScale",
+    "contrast",
+    "glassOpacity",
+    "accent",
+    "uiFont",
+    "codeFont",
+    "codeFontSize",
+    "fontSmoothing",
+    "motionMs",
+    "customCss",
+  ],
+  diffs: ["diffLayout", "diffColors", "wordWrap", "diffIgnoreWhitespace"],
   terminal: ["fontFamily", "fontSize", "lineHeight", "cursorStyle", "cursorBlink"],
 };
 

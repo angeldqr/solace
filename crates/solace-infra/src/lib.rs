@@ -8,5 +8,6 @@ pub mod persist;
 pub mod processes;
 pub mod pty;
 pub mod system;
+pub mod usage;
 pub mod watch;
 pub mod wsl;

@@ -13,7 +13,7 @@ import {
   useSystemDark,
 } from "../settings";
 
-const FONTS = ["JetBrains Mono", "Cascadia Code", "Cascadia Mono", "Consolas"];
+export const FONTS = ["JetBrains Mono", "Cascadia Code", "Cascadia Mono", "Consolas"];
 const OTHER = "other";
 const LINE_HEIGHTS = ["1", "1.1", "1.2", "1.3", "1.4", "1.5"].map((v) => ({
   value: v,

@@ -6,3 +6,4 @@ pub mod orchestration;
 pub mod session;
 pub mod spaces;
 pub mod terminals;
+pub mod usage;

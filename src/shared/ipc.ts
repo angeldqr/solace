@@ -80,8 +80,13 @@ export const api = {
   ptyPause: (pane: PaneId, paused: boolean) => invoke("pty_pause", { pane, paused }),
   filesList: (space: SpaceId, path: string) => invoke<FileEntry[]>("files_list", { space, path }),
   gitStatus: (space: SpaceId) => invoke<Change[] | null>("git_status", { space }),
-  gitDiff: (space: SpaceId, path: string, from: string | null, untracked: boolean) =>
-    invoke<string>("git_diff", { space, path, from, untracked }),
+  gitDiff: (
+    space: SpaceId,
+    path: string,
+    from: string | null,
+    untracked: boolean,
+    ignoreWhitespace: boolean,
+  ) => invoke<string>("git_diff", { space, path, from, untracked, ignoreWhitespace }),
   fileOpen: (space: SpaceId, path: string) => invoke("file_open", { space, path }),
   openUrl: (url: string) => invoke("open_url", { url }),
   fileRead: (space: SpaceId, path: string) => invoke<FileContent>("file_read", { space, path }),
@@ -92,5 +97,44 @@ export const api = {
   systemToastsEnabled: () => invoke<boolean>("system_toasts_enabled"),
   claudeIntegrationInstalled: () => invoke<boolean>("claude_integration_installed"),
   claudeIntegrationSet: (enabled: boolean) => invoke("claude_integration_set", { enabled }),
+  usageGet: () => invoke<UsageView>("usage_get"),
   shellSet: (path: string | null) => invoke("shell_set", { path }),
 };
+
+export interface Limit {
+  windowMinutes: number;
+  usedPercent: number;
+  /** Unix seconds. */
+  resetsAt: number | null;
+}
+
+export interface ProviderUsage {
+  limits: Limit[];
+  plan: string | null;
+  /** Unix ms of the last report. */
+  updatedAt: number;
+}
+
+export interface Tokens {
+  input: number;
+  output: number;
+  cacheCreation: number;
+  cacheRead: number;
+}
+
+export interface UsageView {
+  claude: ProviderUsage | null;
+  codex: ProviderUsage | null;
+  sessions: {
+    pane: PaneId;
+    model: string | null;
+    costUsd: number | null;
+    contextUsedPercent: number | null;
+  }[];
+  tokens: {
+    /** Unix seconds. */
+    blockStart: number;
+    block: Tokens;
+    hourly: { hour: number; tokens: Tokens }[];
+  };
+}

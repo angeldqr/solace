@@ -13,6 +13,7 @@ import { t } from "../../shared/i18n";
 import { api, type SpaceId } from "../../shared/ipc";
 import { Button } from "../../shared/ui/Button";
 import { IconButton } from "../../shared/ui/IconButton";
+import { updateSettings, useSettings } from "../settings/settings";
 import { FileIcon } from "./fileIcons";
 import { useOnDisk } from "./useOnDisk";
 
@@ -22,7 +23,6 @@ const MarkdownView = lazy(() => import("./MarkdownView"));
 /** Longer files ask before rendering, like DiffView: highlighting thousands of lines freezes the panel. */
 const MAX_LINES = 4000;
 const MD_KEY = "solace.mdView";
-const WRAP_KEY = "solace.wrap";
 const MARKDOWN = /\.(md|mdx|markdown)$/i;
 
 /** A render failure in the viewer (a bad file, a parser bug) must not take the whole app down. */
@@ -53,7 +53,7 @@ export function FileViewer({
 }) {
   const { data, error } = useOnDisk(() => api.fileRead(space, path), `${space}:${path}`);
   const [rendered, setRendered] = useState(() => localStorage.getItem(MD_KEY) !== "source");
-  const [wrap, setWrap] = useState(() => localStorage.getItem(WRAP_KEY) !== "off");
+  const wrap = useSettings((s) => s.wordWrap);
   const [forced, setForced] = useState(false);
   const backButton = useRef<HTMLDivElement>(null);
   useEffect(() => backButton.current?.querySelector("button")?.focus(), []);
@@ -115,10 +115,7 @@ export function FileViewer({
           <IconButton
             label={t("wrapLines")}
             pressed={wrap}
-            onClick={() => {
-              setWrap(!wrap);
-              localStorage.setItem(WRAP_KEY, wrap ? "off" : "on");
-            }}
+            onClick={() => updateSettings({ wordWrap: !wrap })}
           >
             <WrapText aria-hidden />
           </IconButton>
@@ -162,7 +159,7 @@ export function FileViewer({
             {markdown && rendered ? (
               <MarkdownView text={data.text} />
             ) : (
-              <CodeViewer name={name} contents={data.text} wrap={wrap} />
+              <CodeViewer name={name} contents={data.text} />
             )}
           </Suspense>
         )}

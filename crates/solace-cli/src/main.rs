@@ -35,6 +35,15 @@ enum Command {
         #[arg(long)]
         source: Option<String>,
     },
+    /// Claude Code's status line command: reports the rate limits it receives on stdin.
+    #[command(hide = true)]
+    Statusline {
+        /// Pass stdin through to stdout, for the user's own status line behind this one.
+        #[arg(long)]
+        tee: bool,
+        #[arg(long)]
+        source: Option<String>,
+    },
 }
 
 #[derive(Subcommand)]
@@ -164,7 +173,9 @@ fn request(command: Command) -> Result<Request, String> {
             timeout_secs: timeout,
         },
         Command::Agent(AgentCommand::List) => Request::AgentList,
-        Command::Skill { .. } | Command::Hook { .. } => return Err("not a request".into()),
+        Command::Skill { .. } | Command::Hook { .. } | Command::Statusline { .. } => {
+            return Err("not a request".into());
+        }
     })
 }
 
@@ -242,10 +253,36 @@ fn hook() -> ExitCode {
     ExitCode::SUCCESS
 }
 
+/// Claude Code's status line: always exits 0 and prints nothing but the `--tee` passthrough.
+fn statusline(tee: bool) -> ExitCode {
+    let mut input = Vec::new();
+    let _ = std::io::stdin().take(1024 * 1024).read_to_end(&mut input);
+    if tee {
+        let mut out = std::io::stdout();
+        let _ = out.write_all(&input);
+        let _ = out.flush();
+    }
+    if let Ok(status) = serde_json::from_slice::<serde_json::Value>(&input) {
+        let (sender, done) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            let _ = call(&Request::UsageReport {
+                pane: caller_pane(),
+                status,
+            });
+            let _ = sender.send(());
+        });
+        // Don't hold up the status line if Solace is slow.
+        let _ = done.recv_timeout(std::time::Duration::from_millis(300));
+    }
+    ExitCode::SUCCESS
+}
+
 fn main() -> ExitCode {
     // Before clap: a usage error exits 2, which Claude Code reads as "block this".
-    if std::env::args().nth(1).as_deref() == Some("hook") {
-        return hook();
+    match std::env::args().nth(1).as_deref() {
+        Some("hook") => return hook(),
+        Some("statusline") => return statusline(std::env::args().any(|a| a == "--tee")),
+        _ => {}
     }
     let command = Cli::parse().command;
     let result = match command {

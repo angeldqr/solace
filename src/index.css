@@ -3,6 +3,12 @@
 /* Light themes (data-theme on <html>, set by applyAppearance). */
 @custom-variant light (&:where([data-theme="light"], [data-theme="light"] *));
 
+/* Popup and panel transition length; applyAppearance sets it from settings. */
+:root {
+  --motion-duration: 150ms;
+  -webkit-font-smoothing: antialiased;
+}
+
 /* Design tokens. Dark-first; values start from T3 Code's quiet black palette. */
 @theme {
   --font-sans: "Inter Variable", "Segoe UI", system-ui, sans-serif;
@@ -75,7 +81,7 @@
     height: 100%;
   }
   body {
-    @apply bg-canvas font-sans text-fg antialiased;
+    @apply bg-canvas font-sans text-fg;
     font-size: var(--text-body);
     line-height: var(--text-body--line-height);
     user-select: none;

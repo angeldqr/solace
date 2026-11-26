@@ -4,6 +4,7 @@ mod files;
 mod notify;
 mod orchestration;
 mod settings;
+mod usage;
 
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -30,6 +31,7 @@ pub struct AppState {
     settings_file: PathBuf,
     /// "en" or "es", reported by the UI.
     locale: String,
+    usage: usage::UsageState,
 }
 
 /// Where the `solace` CLI reaches this app; fixed for the life of the process.
@@ -91,6 +93,7 @@ pub fn run() {
                 settings,
                 settings_file,
                 locale: "en".into(),
+                usage: Default::default(),
             }));
             files::sync_watchers(&app.state::<Shared>().lock().unwrap());
             let handle = app.handle().clone();
@@ -103,12 +106,15 @@ pub fn run() {
             let handle = app.handle().clone();
             std::thread::spawn(move || agents::watch(handle));
             let handle = app.handle().clone();
+            std::thread::spawn(move || usage::watch(handle));
+            let handle = app.handle().clone();
             std::thread::spawn(move || settings::refresh_claude_integration(&handle));
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
             commands::session_get,
             commands::agents_get,
+            usage::usage_get,
             commands::space_open,
             commands::space_close,
             commands::space_activate,
