@@ -30,6 +30,12 @@ export interface SessionView {
   branches: Record<string, string>;
 }
 
+export type FileContent =
+  | { kind: "text"; text: string; size: number }
+  | { kind: "image"; dataUrl: string; size: number }
+  | { kind: "binary"; size: number }
+  | { kind: "tooLarge"; size: number };
+
 export interface FileEntry {
   name: string;
   dir: boolean;
@@ -77,6 +83,8 @@ export const api = {
   gitDiff: (space: SpaceId, path: string, from: string | null, untracked: boolean) =>
     invoke<string>("git_diff", { space, path, from, untracked }),
   fileOpen: (space: SpaceId, path: string) => invoke("file_open", { space, path }),
+  openUrl: (url: string) => invoke("open_url", { url }),
+  fileRead: (space: SpaceId, path: string) => invoke<FileContent>("file_read", { space, path }),
   shellsList: () => invoke<Shell[]>("shells_list"),
   settingsGet: () => invoke<{ shell: string | null; notifications: boolean }>("settings_get"),
   notificationsSet: (enabled: boolean) => invoke("notifications_set", { enabled }),

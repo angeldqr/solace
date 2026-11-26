@@ -16,6 +16,7 @@ crate-type = ["rlib"]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
+base64 = "0.23"
 notify = "9"
 serde.workspace = true
 serde_json.workspace = true

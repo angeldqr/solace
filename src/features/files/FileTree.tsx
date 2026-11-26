@@ -24,6 +24,7 @@ function expandedIn(space: SpaceId) {
 interface TreeState {
   selected: string | null;
   select: (path: string) => void;
+  open: (path: string) => void;
   /** Git status letter per changed file path. */
   status: Map<string, string>;
   /** Folders that contain at least one changed file. */
@@ -32,6 +33,7 @@ interface TreeState {
 const TreeContext = createContext<TreeState>({
   selected: null,
   select: () => {},
+  open: () => {},
   status: new Map(),
   dirty: new Set(),
 });
@@ -73,7 +75,15 @@ function onTreeKeyDown(event: React.KeyboardEvent<HTMLElement>) {
   target?.focus();
 }
 
-export function FileTree({ space, changes }: { space: SpaceId; changes: Changes }) {
+export function FileTree({
+  space,
+  changes,
+  onOpen,
+}: {
+  space: SpaceId;
+  changes: Changes;
+  onOpen: (path: string) => void;
+}) {
   const [selected, select] = useState<string | null>(null);
   const tree = useRef<HTMLDivElement>(null);
   const git = useMemo(() => {
@@ -88,7 +98,10 @@ export function FileTree({ space, changes }: { space: SpaceId; changes: Changes 
     }
     return { status, dirty };
   }, [changes.data]);
-  const state = useMemo<TreeState>(() => ({ selected, select, ...git }), [selected, git]);
+  const state = useMemo<TreeState>(
+    () => ({ selected, select, open: onOpen, ...git }),
+    [selected, onOpen, git],
+  );
 
   // Collapsing, or a refresh that removes the selected row, would leave the tree without a tab stop.
   useLayoutEffect(() => {
@@ -223,7 +236,7 @@ function FolderRow(props: { space: SpaceId; path: string; entry: FileEntry; dept
 }
 
 function FileRow(props: { space: SpaceId; path: string; entry: FileEntry; depth: number }) {
-  const { selected, select, status } = useContext(TreeContext);
+  const { selected, select, open, status } = useContext(TreeContext);
   const isSelected = selected === props.path;
   const letter = status.get(props.path);
   const color = letter
@@ -241,8 +254,7 @@ function FileRow(props: { space: SpaceId; path: string; entry: FileEntry; depth:
       tabIndex={isSelected ? 0 : -1}
       onFocus={() => select(props.path)}
       title={t("openFileHint")}
-      onDoubleClick={() => void api.fileOpen(props.space, props.path)}
-      onKeyDown={(event) => event.key === "Enter" && void api.fileOpen(props.space, props.path)}
+      onClick={() => open(props.path)}
       style={{ paddingLeft: BASE + props.depth * INDENT }}
       className={rowClass(isSelected, color)}
     >

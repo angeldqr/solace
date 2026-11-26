@@ -4139,6 +4139,7 @@ dependencies = [
 name = "solace-app"
 version = "0.0.12"
 dependencies = [
+ "base64 0.23.1",
  "notify",
  "serde",
  "serde_json",

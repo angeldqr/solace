@@ -127,6 +127,8 @@ pub fn run() {
             files::git_status,
             files::git_diff,
             files::file_open,
+            files::file_read,
+            files::open_url,
             settings::shells_list,
             settings::settings_get,
             settings::shell_set,

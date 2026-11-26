@@ -8,6 +8,7 @@ export function IconButton({
   className = "",
   shortcut,
   size = "md",
+  pressed,
 }: {
   label: string;
   onClick: () => unknown;
@@ -15,14 +16,16 @@ export function IconButton({
   className?: string;
   shortcut?: string;
   size?: "sm" | "md";
+  pressed?: boolean;
 }) {
   return (
     <Tooltip label={label} shortcut={shortcut}>
       <button
         type="button"
         aria-label={label}
+        aria-pressed={pressed}
         onClick={() => void onClick()}
-        className={`grid ${size === "sm" ? "size-5" : "size-6"} shrink-0 place-items-center rounded-md text-fg-muted transition-colors duration-150 hover:bg-hover hover:text-fg [&>svg]:size-3.5 ${className}`}
+        className={`grid ${size === "sm" ? "size-5" : "size-6"} shrink-0 place-items-center rounded-md text-fg-muted transition-colors duration-150 hover:bg-hover hover:text-fg [&>svg]:size-3.5 ${pressed ? "bg-hover text-fg" : ""} ${className}`}
       >
         {children}
       </button>

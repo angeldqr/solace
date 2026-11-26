@@ -1,4 +1,9 @@
+use base64::Engine;
+use base64::engine::general_purpose::STANDARD;
+use serde::Serialize;
 use std::collections::{HashMap, HashSet};
+use std::fs::File;
+use std::io::Read;
 use std::path::{Component, Path, PathBuf};
 use std::sync::mpsc;
 use std::thread;
@@ -121,6 +126,103 @@ pub fn file_open(
     result.map_err(|e| e.to_string())
 }
 
+const MAX_TEXT: u64 = 2 * 1024 * 1024;
+const MAX_IMAGE: u64 = 10 * 1024 * 1024;
+
+/// What the in-app viewer can show for a file.
+#[derive(Serialize, Debug, PartialEq)]
+#[serde(tag = "kind", rename_all = "camelCase")]
+pub enum FileContent {
+    Text { text: String, size: u64 },
+    #[serde(rename_all = "camelCase")]
+    Image { data_url: String, size: u64 },
+    Binary { size: u64 },
+    TooLarge { size: u64 },
+}
+
+fn image_mime(name: &str) -> Option<&'static str> {
+    Some(match name.rsplit_once('.')?.1.to_ascii_lowercase().as_str() {
+        "png" => "image/png",
+        "jpg" | "jpeg" => "image/jpeg",
+        "gif" => "image/gif",
+        "webp" => "image/webp",
+        "bmp" => "image/bmp",
+        "ico" => "image/x-icon",
+        "svg" => "image/svg+xml",
+        _ => return None,
+    })
+}
+
+/// Pure part of `file_read`: size limits are checked by the caller before reading.
+fn classify(name: &str, bytes: Vec<u8>) -> FileContent {
+    let size = bytes.len() as u64;
+    if let Some(mime) = image_mime(name) {
+        let data_url = format!("data:{mime};base64,{}", STANDARD.encode(&bytes));
+        return FileContent::Image { data_url, size };
+    }
+    if bytes.iter().take(8192).any(|&b| b == 0) {
+        return FileContent::Binary { size };
+    }
+    match String::from_utf8(bytes) {
+        Ok(text) => FileContent::Text {
+            text: text.strip_prefix('\u{feff}').map(str::to_owned).unwrap_or(text),
+            size,
+        },
+        Err(_) => FileContent::Binary { size },
+    }
+}
+
+/// `target` with links resolved, refused when it lands outside `root` (a symlink or junction in the space).
+fn contained(root: &Path, target: &Path) -> Result<PathBuf> {
+    let root = std::fs::canonicalize(root).map_err(|e| e.to_string())?;
+    let target = std::fs::canonicalize(target).map_err(|e| e.to_string())?;
+    if !target.starts_with(&root) {
+        return Err(format!("{} is outside the space", target.display()));
+    }
+    Ok(target)
+}
+
+/// Only web and mail links leave the app; anything else (file:, javascript:, custom schemes) is refused.
+#[tauri::command]
+pub fn open_url(app: AppHandle, url: String) -> Result<()> {
+    let lower = url.to_ascii_lowercase();
+    if !["http://", "https://", "mailto:"].iter().any(|s| lower.starts_with(s)) {
+        return Err("unsupported link".into());
+    }
+    app.opener()
+        .open_url(url, None::<&str>)
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn file_read(
+    state: State<'_, Shared>,
+    space: SpaceId,
+    path: String,
+) -> Result<FileContent> {
+    let root = root_of(&state, space)?;
+    let target = inside(&root, &path)?;
+    blocking(move || {
+        let target = contained(&root, &target)?;
+        if std::fs::metadata(&target).map_err(|e| e.to_string())?.is_dir() {
+            return Err("is a folder".into());
+        }
+        let name = target.file_name().and_then(|n| n.to_str()).unwrap_or("");
+        let limit = if image_mime(name).is_some() { MAX_IMAGE } else { MAX_TEXT };
+        // The size on disk can lag or lie (growing logs, special files): never read past the limit.
+        let mut bytes = Vec::new();
+        File::open(&target)
+            .and_then(|f| f.take(limit + 1).read_to_end(&mut bytes))
+            .map_err(|e| e.to_string())?;
+        if bytes.len() as u64 > limit {
+            let size = std::fs::metadata(&target).map(|m| m.len()).unwrap_or(limit + 1);
+            return Ok(FileContent::TooLarge { size });
+        }
+        Ok(classify(name, bytes))
+    })
+    .await
+}
+
 /// Keeps one recursive watcher per open space: new spaces start one, closed spaces drop theirs.
 /// A folder that can't be watched (gone, offline share) is remembered as such rather than
 /// retried on every change, which could stall the app on a network timeout.
@@ -182,5 +284,42 @@ mod tests {
         #[cfg(windows)]
         assert!(inside(root, "C:/Windows").is_err());
         assert!(inside(root, "/etc/passwd").is_err());
+    }
+
+    #[test]
+    fn links_cannot_leave_the_space() {
+        let base = std::env::temp_dir().join(format!("solace-contained-{}", std::process::id()));
+        let (root, outside) = (base.join("root"), base.join("outside"));
+        std::fs::create_dir_all(&root).unwrap();
+        std::fs::create_dir_all(&outside).unwrap();
+        std::fs::write(root.join("a.txt"), "a").unwrap();
+        std::fs::write(outside.join("b.txt"), "b").unwrap();
+        assert!(contained(&root, &root.join("a.txt")).is_ok());
+        assert!(contained(&root, &outside.join("b.txt")).is_err());
+        // Creating symlinks needs privileges on Windows, so the link case runs elsewhere only.
+        #[cfg(unix)]
+        {
+            std::os::unix::fs::symlink(outside.join("b.txt"), root.join("link")).unwrap();
+            assert!(contained(&root, &root.join("link")).is_err());
+        }
+        std::fs::remove_dir_all(&base).unwrap();
+    }
+
+    #[test]
+    fn classifies_file_contents() {
+        let text = |s: &str| FileContent::Text { text: s.into(), size: s.len() as u64 };
+        assert_eq!(classify("a.rs", b"fn main() {}".to_vec()), text("fn main() {}"));
+        let bom = classify("a.md", b"\xEF\xBB\xBFhi".to_vec());
+        assert_eq!(bom, FileContent::Text { text: "hi".into(), size: 5 });
+        assert_eq!(classify("a.bin", vec![1, 0, 2]), FileContent::Binary { size: 3 });
+        assert_eq!(classify("a.txt", vec![0xff, 0xfe, 0x41]), FileContent::Binary { size: 3 });
+        let FileContent::Image { data_url, .. } = classify("X.PNG", vec![1, 2, 3]) else {
+            panic!("png is an image")
+        };
+        assert_eq!(data_url, "data:image/png;base64,AQID");
+        let FileContent::Image { data_url, .. } = classify("a.svg", b"<svg/>".to_vec()) else {
+            panic!("svg is an image")
+        };
+        assert!(data_url.starts_with("data:image/svg+xml;base64,"));
     }
 }

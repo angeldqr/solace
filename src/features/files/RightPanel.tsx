@@ -6,7 +6,7 @@ import { IconButton } from "../../shared/ui/IconButton";
 import { ResizeHandle } from "../../shared/ui/ResizeHandle";
 import { useSidebar } from "../spaces/sidebarWidth";
 import { ChangesView } from "./ChangesView";
-import { FileTree } from "./FileTree";
+import { FilesTab } from "./FilesTab";
 import { DEFAULT_WIDTH, MIN_WIDTH, maxWidth, TERMINAL_MIN_WIDTH, usePanel } from "./panel";
 import { useChanges } from "./useChanges";
 
@@ -70,9 +70,11 @@ function Panel({ space }: { space: Space }) {
             </IconButton>
           </div>
         </div>
-        <div className="min-h-0 flex-1 overflow-auto text-body">
+        <div
+          className={`min-h-0 flex-1 text-body ${tab === "files" ? "overflow-hidden" : "overflow-auto"}`}
+        >
           {tab === "files" ? (
-            <FileTree key={space.id} space={space.id} changes={changes} />
+            <FilesTab key={space.id} space={space.id} changes={changes} />
           ) : (
             <ChangesView key={space.id} space={space.id} changes={changes} />
           )}
