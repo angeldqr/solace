@@ -101,6 +101,16 @@ pub fn watch(app: AppHandle) {
         if tick.is_multiple_of(SCAN_EVERY) {
             // Outside the state lock: a full scan can take tens of milliseconds.
             processes.refresh();
+            let panes: Vec<(u32, u32)> = {
+                let state = app.state::<Shared>();
+                let state = state.lock().unwrap();
+                state
+                    .ptys
+                    .iter()
+                    .filter_map(|(pane, pty)| Some((pane.0, pty.pid()?)))
+                    .collect()
+            };
+            processes.refresh_wsl(&panes, crate::endpoint());
         }
         let scanned = tick.is_multiple_of(SCAN_EVERY);
         let state = app.state::<Shared>();
@@ -190,7 +200,7 @@ fn update(state: &mut AppState, scan: Option<&Processes>, notices: &mut Vec<Pend
 
     for (pane, pty) in ptys.iter() {
         let found = match scan {
-            Some(processes) => pty.pid().and_then(|pid| processes.find_agent(pid)),
+            Some(processes) => pty.pid().and_then(|pid| processes.find_agent(pane.0, pid)),
             None => agents.get(pane).map(|entry| entry.def),
         };
         let Some(def) = found else {

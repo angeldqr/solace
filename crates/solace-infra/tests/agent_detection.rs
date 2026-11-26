@@ -51,7 +51,7 @@ fn fake_claude_under_the_shell_is_identified_and_working() {
     let def = loop {
         while rx.try_recv().is_ok() {}
         processes.refresh();
-        if let Some(def) = processes.find_agent(pty.pid().unwrap())
+        if let Some(def) = processes.find_agent(1, pty.pid().unwrap())
             && pty.snapshot().title.contains("Refactoring")
         {
             break def;
