@@ -12,6 +12,13 @@ repository = "https://github.com/angeldqr/solace"
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["preserve_order"] }
 
+# Full debug info for every dependency fills the disk fast; file:line in backtraces is enough.
+[profile.dev]
+debug = "line-tables-only"
+
+[profile.dev.package."*"]
+debug = false
+
 [profile.release]
 codegen-units = 1
 lto = true
