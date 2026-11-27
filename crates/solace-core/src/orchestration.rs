@@ -101,6 +101,9 @@ pub enum Request {
         pane: Option<PaneId>,
         summary: String,
         failed: bool,
+        /// A review that found nothing to fix: no commits is fine, uncommitted changes are not.
+        #[serde(default)]
+        no_changes: bool,
     },
     /// From Claude Code's status line: the raw status JSON, which carries the rate limits.
     #[serde(rename = "usage.report")]
@@ -170,6 +173,10 @@ mod tests {
             ),
             (
                 r#"{"method":"task.done","params":{"task":"b1-1","pane":null,"summary":"s","failed":true}}"#,
+                true,
+            ),
+            (
+                r#"{"method":"task.done","params":{"task":"b1-1","pane":null,"summary":"s","failed":false,"no_changes":true}}"#,
                 true,
             ),
             (r#"{"method":"task.done","params":{"task":"b1-1"}}"#, false),

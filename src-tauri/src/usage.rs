@@ -8,16 +8,17 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use serde::Serialize;
 use serde_json::Value;
+use solace_core::agents::ScreenContext;
 use solace_core::terminals::PaneId;
 use solace_core::usage::{
     ClaudeSession, ContextUse, Limit, ProviderUsage, Tokens, parse_claude_status,
 };
-use solace_infra::usage::{ClaudeLog, CodexCache, CodexContext, OpencodeContext};
+use solace_infra::usage::{ClaudeLog, CodexCache, CodexContext};
 use tauri::{AppHandle, Emitter, Manager, State};
 
 use crate::{AppState, Shared};
 
-/// Context of Codex and OpenCode panes is polled this often; the heavier reads every `EVERY`.
+/// Context of Codex panes is polled this often; the heavier reads every `EVERY`.
 const TICK: Duration = Duration::from_secs(5);
 const EVERY: Duration = Duration::from_secs(30);
 const FIVE_HOURS: u64 = 5 * 3600;
@@ -27,8 +28,10 @@ pub struct UsageState {
     claude: Option<ProviderUsage>,
     codex: Option<ProviderUsage>,
     sessions: HashMap<PaneId, ClaudeSession>,
-    /// Context of the Codex and OpenCode panes: (agent id, context).
+    /// Context of the Codex panes read from its rollouts: (agent id, context).
     contexts: HashMap<PaneId, (String, ContextUse)>,
+    /// Context an agent prints on its own screen, kept while the agent runs.
+    pub(crate) screens: HashMap<PaneId, ScreenContext>,
     tokens: TokensView,
 }
 
@@ -76,6 +79,22 @@ impl SessionUsage {
             cost_usd: cost,
         }
     }
+
+    /// What the agent's screen says wins over the rollout; the window size follows from both
+    /// numbers when the footer gives them.
+    fn with_screen(mut self, screen: &ScreenContext) -> Self {
+        if let Some(used) = screen.used {
+            self.used_tokens = Some(used);
+        }
+        if let Some(percent) = screen.percent {
+            self.percent = Some(percent);
+            // An integer percent below 10 gives a limit off by up to 50%; only derive it above that.
+            if let (Some(used), true) = (screen.used, percent >= 10.0) {
+                self.limit = Some((used as f64 / (percent / 100.0)).round() as u64);
+            }
+        }
+        self
+    }
 }
 
 #[derive(Clone, PartialEq, Serialize)]
@@ -106,11 +125,28 @@ pub fn view(state: &AppState) -> UsageView {
         let (model, cost) = (s.model.clone(), s.cost_usd);
         SessionUsage::new(*pane, "claude", model, cost, s.context.as_ref())
     });
-    let others = state
+    let mut panes: Vec<PaneId> = state
         .usage
         .contexts
-        .iter()
-        .map(|(pane, (agent, c))| SessionUsage::new(*pane, agent, None, None, Some(c)));
+        .keys()
+        .chain(state.usage.screens.keys())
+        .filter(|p| !state.usage.sessions.contains_key(p))
+        .copied()
+        .collect();
+    panes.sort_by_key(|p| p.0);
+    panes.dedup();
+    let others = panes.into_iter().filter_map(|pane| {
+        let rollout = state.usage.contexts.get(&pane);
+        let agent = match rollout {
+            Some((agent, _)) => agent,
+            None => crate::agents::agent_in(state, pane)?.0,
+        };
+        let session = SessionUsage::new(pane, agent, None, None, rollout.map(|(_, c)| c));
+        Some(match state.usage.screens.get(&pane) {
+            Some(screen) => session.with_screen(screen),
+            None => session,
+        })
+    });
     let mut sessions: Vec<SessionUsage> = claude
         .chain(others)
         .filter(|s| state.ptys.contains_key(&s.pane))
@@ -188,7 +224,7 @@ pub fn report(app: &AppHandle, pane: Option<PaneId>, status: &Value) {
     }
 }
 
-/// Codex and OpenCode panes, with the folder each works in.
+/// Codex panes, with the folder each works in.
 fn context_panes(app: &AppHandle) -> Vec<(PaneId, &'static str, PathBuf)> {
     let state = app.state::<Shared>();
     let state = state.lock().unwrap();
@@ -197,8 +233,10 @@ fn context_panes(app: &AppHandle) -> Vec<(PaneId, &'static str, PathBuf)> {
         .keys()
         .filter_map(|&pane| {
             let (agent, _) = crate::agents::agent_in(&state, pane)?;
-            let root = state.session.pane_root(pane)?.to_path_buf();
-            matches!(agent, "codex" | "opencode").then_some((pane, agent, root))
+            // Task workers run in their own worktree, not the space's folder.
+            let root = crate::tasks::worktree_of(&state, pane)
+                .unwrap_or(state.session.pane_root(pane)?.to_path_buf());
+            (agent == "codex").then_some((pane, agent, root))
         })
         .collect()
 }
@@ -206,14 +244,9 @@ fn context_panes(app: &AppHandle) -> Vec<(PaneId, &'static str, PathBuf)> {
 pub fn watch(app: AppHandle) {
     let mut log = ClaudeLog::default();
     let mut codex = CodexCache::default();
-    let (mut codex_ctx, mut opencode_ctx) = (CodexContext::default(), OpencodeContext::default());
+    let mut codex_ctx = CodexContext::default();
     let codex_home = home_dir("CODEX_HOME", ".codex");
     let projects = home_dir("CLAUDE_CONFIG_DIR", ".claude").map(|d| d.join("projects"));
-    let opencode_db = std::env::var_os("OPENCODE_DB")
-        .map(PathBuf::from)
-        .or_else(|| Some(home_dir("USERPROFILE", "")?.join(".local/share/opencode/opencode.db")));
-    let opencode_models =
-        home_dir("USERPROFILE", "").map(|h| h.join(".cache/opencode/models.json"));
     let mut heavy: Option<std::time::Instant> = None;
     let mut codex_usage = None;
     let mut tokens = None;
@@ -251,13 +284,9 @@ pub fn watch(app: AppHandle) {
         let contexts: HashMap<PaneId, (String, ContextUse)> = context_panes(&app)
             .into_iter()
             .filter_map(|(pane, agent, root)| {
-                let ctx = match agent {
-                    "codex" => codex_home.as_deref().and_then(|h| codex_ctx.read(h, &root)),
-                    _ => opencode_db
-                        .as_deref()
-                        .zip(opencode_models.as_deref())
-                        .and_then(|(db, models)| opencode_ctx.read(db, models, &root)),
-                }?;
+                let ctx = codex_home
+                    .as_deref()
+                    .and_then(|h| codex_ctx.read(h, &root))?;
                 Some((pane, (agent.to_string(), ctx)))
             })
             .collect();

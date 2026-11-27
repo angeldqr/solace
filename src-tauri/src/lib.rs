@@ -53,8 +53,32 @@ pub(crate) fn endpoint() -> &'static str {
 
 type Shared = Mutex<AppState>;
 
+fn log_plugin() -> tauri::plugin::TauriPlugin<tauri::Wry> {
+    use tauri_plugin_log::{RotationStrategy, Target, TargetKind};
+    let mut targets = vec![Target::new(TargetKind::LogDir {
+        file_name: Some("solace".into()),
+    })];
+    let mut level = log::LevelFilter::Info;
+    if cfg!(debug_assertions) {
+        targets.push(Target::new(TargetKind::Stdout));
+        level = log::LevelFilter::Debug;
+    }
+    tauri_plugin_log::Builder::new()
+        .level(level)
+        .targets(targets)
+        .rotation_strategy(RotationStrategy::KeepOne)
+        .max_file_size(2 * 1024 * 1024)
+        .build()
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // Panics land in the log file too, where a user can find them.
+    let default_hook = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |info| {
+        log::error!("panic: {info}");
+        default_hook(info);
+    }));
     let app = tauri::Builder::default()
         // Must be first: a second instance would start duplicate shells and overwrite the session.
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
@@ -63,6 +87,7 @@ pub fn run() {
                 let _ = window.set_focus();
             }
         }))
+        .plugin(log_plugin())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_notification::init())
@@ -144,7 +169,7 @@ pub fn run() {
             files::files_list,
             files::git_status,
             files::git_diff,
-            files::git_show_image,
+            files::change_image,
             files::file_open,
             files::file_read,
             files::open_url,
@@ -156,6 +181,7 @@ pub fn run() {
             settings::system_toasts_enabled,
             settings::claude_integration_installed,
             settings::claude_integration_set,
+            settings::open_log_dir,
         ])
         .build(tauri::generate_context!())
         .expect("error while building Solace");

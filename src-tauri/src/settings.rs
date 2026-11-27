@@ -91,6 +91,18 @@ fn claude_paths() -> Result<solace_infra::integrations::ClaudePaths, String> {
     ))
 }
 
+/// Opens the folder holding Solace's log file in the file manager.
+#[tauri::command]
+pub fn open_log_dir(app: tauri::AppHandle) -> Result<(), String> {
+    use tauri::Manager;
+    use tauri_plugin_opener::OpenerExt;
+    let dir = app.path().app_log_dir().map_err(|e| e.to_string())?;
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    app.opener()
+        .open_path(dir.to_string_lossy(), None::<&str>)
+        .map_err(|e| e.to_string())
+}
+
 #[tauri::command(async)]
 pub fn claude_integration_installed() -> Result<bool, String> {
     Ok(solace_infra::integrations::claude_installed(

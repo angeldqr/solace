@@ -523,6 +523,14 @@ pub fn diff(
 /// Bytes of `path` at HEAD, for previewing images; `None` when it is missing there or over `max`.
 pub fn show_image(dir: &Path, path: &str, max: usize) -> Result<Option<Vec<u8>>, String> {
     let spec = format!("HEAD:{}", path.replace('\\', "/"));
+    // Ask for the size first so a huge blob is never read.
+    let size = git(dir, &["cat-file", "-s", &spec]).map_err(|e| e.to_string())?;
+    let size = String::from_utf8_lossy(&size.stdout)
+        .trim()
+        .parse::<usize>();
+    if size.is_ok_and(|n| n > max) {
+        return Ok(None);
+    }
     let output = git(dir, &["show", "--no-textconv", &spec]).map_err(|e| e.to_string())?;
     Ok((output.status.success() && output.stdout.len() <= max).then_some(output.stdout))
 }

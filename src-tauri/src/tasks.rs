@@ -130,6 +130,16 @@ fn task_view(s: &AppState, t: &Task) -> TaskView {
     }
 }
 
+/// The worktree a task's pane works in, if the pane belongs to a task that has one.
+pub fn worktree_of(s: &AppState, pane: PaneId) -> Option<PathBuf> {
+    s.batches
+        .iter()
+        .flat_map(|b| &b.tasks)
+        .find(|t| t.pane == Some(pane))?
+        .worktree
+        .clone()
+}
+
 /// Called every few hundred milliseconds: notes which task panes still run an agent. True when a
 /// task just changed between running and "agent exited", so the UI must hear about it.
 pub fn observe(s: &mut AppState) -> bool {
@@ -549,6 +559,7 @@ pub fn done(
     pane: Option<PaneId>,
     summary: &str,
     failed: bool,
+    no_changes: bool,
 ) -> Result {
     let (worktree, branch, top, base, wsl) = with_state(app, |s| {
         let (batch, found) = s
@@ -575,11 +586,12 @@ pub fn done(
                 "you have uncommitted changes: commit them on {name} first, then run solace task done again"
             ));
         }
-        if let (Some(top), Some(base), Some(branch)) = (&top, &base, &branch)
+        if !no_changes
+            && let (Some(top), Some(base), Some(branch)) = (&top, &base, &branch)
             && git::commits_since(top, base, branch, wsl) == Ok(0)
         {
             return Err(format!(
-                "no commits on {name}: commit your work or use --failed"
+                "no commits on {name}: commit your work, or use --no-changes if there was nothing to fix, or --failed"
             ));
         }
     }

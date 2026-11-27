@@ -122,8 +122,11 @@ fn installed_agents(wsl: bool, on_path: impl Fn(&str) -> bool) -> Vec<(String, S
         .collect()
 }
 
-#[tauri::command]
+/// Scanning PATH is slow on Windows, so it runs off the main thread and only once per run (PATH
+/// rarely changes while Solace is open).
+#[tauri::command(async)]
 pub fn agents_installed(state: State<Shared>) -> Vec<(String, String)> {
+    static ON_PATH: std::sync::OnceLock<Vec<(String, String)>> = std::sync::OnceLock::new();
     let wsl = state
         .lock()
         .unwrap()
@@ -131,7 +134,12 @@ pub fn agents_installed(state: State<Shared>) -> Vec<(String, String)> {
         .shell
         .as_ref()
         .is_some_and(|s| s.to_string_lossy().to_lowercase().contains("wsl"));
-    installed_agents(wsl, solace_infra::system::on_path)
+    if wsl {
+        return installed_agents(true, solace_infra::system::on_path);
+    }
+    ON_PATH
+        .get_or_init(|| installed_agents(false, solace_infra::system::on_path))
+        .clone()
 }
 
 /// Opens a tab and starts the agent in it.

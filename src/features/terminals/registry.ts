@@ -76,8 +76,7 @@ function create(pane: PaneId): Entry {
   });
   term.onTitleChange((title) => setTitle(pane, title));
   term.attachCustomKeyEventHandler((event) => {
-    if (event.type !== "keydown") return true;
-    if (interceptKey(event)) return false;
+    if (event.type === "keydown" && interceptKey(event)) return false;
     // Agent CLIs read a bare Enter as submit; Shift+Enter inserts a newline instead.
     if (
       event.key === "Enter" &&
@@ -87,9 +86,11 @@ function create(pane: PaneId): Entry {
       !event.metaKey &&
       useAgents.getState().list.some((a) => a.pane === pane)
     ) {
-      void api.ptyWrite(pane, "\n");
+      // Swallow keydown and keypress alike, or xterm still sends "\r" from the keypress.
+      if (event.type === "keydown") void api.ptyWrite(pane, "\n");
       return false;
     }
+    if (event.type !== "keydown") return true;
     const key = event.key.toLowerCase();
     if (event.ctrlKey && key === "c" && term.hasSelection()) {
       void navigator.clipboard.writeText(term.getSelection());
@@ -105,11 +106,16 @@ function create(pane: PaneId): Entry {
   el.className = "h-full w-full";
   // Right click copies the selection, or pastes when nothing is selected.
   el.addEventListener("contextmenu", () => {
+    // Apps that track the mouse (OpenCode) own the right click.
+    if (term.modes.mouseTrackingMode !== "none") return;
     if (term.hasSelection()) {
       void navigator.clipboard.writeText(term.getSelection());
       term.clearSelection();
     } else {
-      void navigator.clipboard.readText().then((text) => term.paste(text));
+      void navigator.clipboard.readText().then(
+        (text) => term.paste(text),
+        () => undefined,
+      );
     }
   });
   return { term, fit, el, opened: false, attached: false };

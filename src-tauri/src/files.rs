@@ -106,19 +106,34 @@ pub async fn git_diff(
     blocking(move || git::diff(&root, &path, from.as_deref(), untracked, ignore_whitespace)).await
 }
 
-/// The image as of the last commit, as a data URL; `None` when it didn't exist or is too big.
+/// An image of a change (`path` is repository-relative, as git status reports it) as a data URL,
+/// from the last commit or from disk; `None` when it doesn't exist there or is too big.
 #[tauri::command]
-pub async fn git_show_image(
+pub async fn change_image(
     state: State<'_, Shared>,
     space: SpaceId,
     path: String,
+    at_head: bool,
 ) -> Result<Option<String>> {
     inside(Path::new(""), &path)?;
     let mime = image_mime(&path).ok_or("not an image")?;
     let root = root_of(&state, space)?;
     blocking(move || {
-        Ok(git::show_image(&root, &path, MAX_IMAGE as usize)?
-            .map(|bytes| format!("data:{mime};base64,{}", STANDARD.encode(bytes))))
+        // The space may be a subfolder of the repository.
+        let top = git::toplevel(&root, false)?.unwrap_or(root);
+        let bytes = if at_head {
+            git::show_image(&top, &path, MAX_IMAGE as usize)?
+        } else {
+            let Ok(target) = contained(&top, &inside(&top, &path)?) else {
+                return Ok(None);
+            };
+            let mut bytes = Vec::new();
+            File::open(target)
+                .and_then(|f| f.take(MAX_IMAGE + 1).read_to_end(&mut bytes))
+                .map_err(|e| e.to_string())?;
+            (bytes.len() as u64 <= MAX_IMAGE).then_some(bytes)
+        };
+        Ok(bytes.map(|b| format!("data:{mime};base64,{}", STANDARD.encode(b))))
     })
     .await
 }

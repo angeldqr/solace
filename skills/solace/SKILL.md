@@ -102,7 +102,9 @@ solace tasks start <<'EOF'
 EOF
 ```
 
-Then summarise the findings for the user; merge only when they ask.
+A reviewer that finds nothing to fix reports with `solace task done --no-changes --summary '...'`
+(no commits needed; uncommitted changes are still refused). Then summarise the findings for the user;
+merge only when they ask.
 
 ## If SOLACE_TASK_ID is set, you are a worker
 

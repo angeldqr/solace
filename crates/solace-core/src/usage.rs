@@ -182,29 +182,6 @@ pub fn parse_codex_meta(line: &str) -> Option<(Option<String>, Option<String>)> 
     Some((s("cwd"), s("model")))
 }
 
-/// An OpenCode assistant message (the `data` column) that has token counts, with its provider id
-/// (needed to look the model's window up).
-pub fn parse_opencode_message(data: &str) -> Option<(ContextUse, Option<String>)> {
-    let v: Value = serde_json::from_str(data).ok()?;
-    if v.get("role")?.as_str()? != "assistant" {
-        return None;
-    }
-    let t = v.get("tokens")?;
-    let n = |p: &str| t.pointer(p).and_then(Value::as_u64).unwrap_or(0);
-    let used = n("/input") + n("/cache/read") + n("/cache/write");
-    // A message still streaming reports zeros: the previous one is the truth.
-    if used == 0 {
-        return None;
-    }
-    let s = |k: &str| v.get(k).and_then(Value::as_str).map(str::to_string);
-    let ctx = ContextUse {
-        used,
-        limit: None,
-        model: s("modelID"),
-    };
-    Some((ctx, s("providerID")))
-}
-
 /// A Codex `token_count` event with at least one rate-limit window. Windows are identified by
 /// their length, never by position: free plans report a 30-day window as the primary one.
 pub fn parse_codex_line(line: &str) -> Option<(Vec<Limit>, Option<String>)> {
@@ -374,15 +351,6 @@ mod tests {
             Some((Some("C:\\a".into()), Some("gpt-5".into())))
         );
         assert!(parse_codex_meta(tc).is_none());
-
-        let m = r#"{"role":"assistant","modelID":"m1","providerID":"p1","tokens":{"total":9,"input":10,"output":5,"cache":{"read":20,"write":30}}}"#;
-        let (c, p) = parse_opencode_message(m).unwrap();
-        assert_eq!(
-            (c.used, c.model.as_deref(), p.as_deref()),
-            (60, Some("m1"), Some("p1"))
-        );
-        assert!(parse_opencode_message(r#"{"role":"user"}"#).is_none());
-        assert!(parse_opencode_message(r#"{"role":"assistant","tokens":{"input":0}}"#).is_none());
     }
 
     #[test]

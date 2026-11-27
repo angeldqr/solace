@@ -2,9 +2,11 @@ import "@fontsource-variable/inter";
 import "@fontsource-variable/jetbrains-mono";
 import "@xterm/xterm/css/xterm.css";
 import "./index.css";
+import { error as logError } from "@tauri-apps/plugin-log";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { App } from "./app/App";
+import { ErrorBoundary } from "./app/ErrorBoundary";
 import { startFileEvents } from "./features/files/panel";
 import { startPresence } from "./features/presence/presence";
 import { applyAppearance, useSettings, useSystemDark } from "./features/settings/settings";
@@ -27,6 +29,12 @@ document.addEventListener("contextmenu", (e) => {
   if (!(e.target instanceof Element && e.target.closest("input, textarea, [contenteditable]")))
     e.preventDefault();
 });
+// Failures outside React's render land in the log file too.
+window.addEventListener("error", (e) => void logError(e.error?.stack ?? e.message).catch(() => {}));
+window.addEventListener(
+  "unhandledrejection",
+  (e) => void logError(String(e.reason?.stack ?? e.reason)).catch(() => {}),
+);
 void startSession();
 void startAgents();
 void startTasks();
@@ -40,7 +48,9 @@ if (!root) throw new Error("#root element missing from index.html");
 createRoot(root).render(
   <StrictMode>
     <TooltipProvider delay={400}>
-      <App />
+      <ErrorBoundary>
+        <App />
+      </ErrorBoundary>
     </TooltipProvider>
   </StrictMode>,
 );

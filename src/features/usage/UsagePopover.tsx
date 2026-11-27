@@ -25,10 +25,18 @@ function windowLabel(minutes: number) {
   return `${minutes} min`;
 }
 
-function Bar({ percent }: { percent: number }) {
+function Bar({ percent, label }: { percent: number; label?: string }) {
   const shown = Math.min(100, Math.max(0, percent));
   return (
-    <div className="h-1.5 overflow-hidden rounded-full bg-hover">
+    // biome-ignore lint/a11y/useSemanticElements: a <meter> can't take this custom fill
+    <div
+      role="meter"
+      aria-label={label}
+      aria-valuemin={0}
+      aria-valuemax={100}
+      aria-valuenow={Math.round(shown)}
+      className="h-1.5 overflow-hidden rounded-full bg-hover"
+    >
       <div
         className={`h-full rounded-full bg-linear-to-r from-current/60 to-current transition-[width] duration-500 ${tone(percent)}`}
         style={{ width: `${shown}%` }}
@@ -204,7 +212,7 @@ export function UsagePopover({
                 {s.percent !== null && s.usedTokens !== null && s.limit !== null && (
                   <span className="flex items-center gap-2" title={t("usageContext")}>
                     <span className="flex-1">
-                      <Bar percent={s.percent} />
+                      <Bar percent={s.percent} label={t("usageContext")} />
                     </span>
                     <span className="text-2xs text-fg-subtle tabular-nums">
                       {Math.round(s.percent)}% · {compact(s.usedTokens)} / {compact(s.limit)}

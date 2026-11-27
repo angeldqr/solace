@@ -71,9 +71,15 @@ function AgentRow(props: {
   elapsed: string;
 }) {
   const ctx = useUsage((s) => s.view?.sessions.find((x) => x.pane === props.agent.pane));
+  const context =
+    ctx?.percent != null && ctx.limit !== null
+      ? t("contextOf", { pct: Math.round(ctx.percent), limit: compact(ctx.limit) }) +
+        (ctx.model ? ` · ${ctx.model}` : "")
+      : undefined;
   return (
     <button
       type="button"
+      aria-label={context && `${props.agent.label ?? props.agent.name} · ${context}`}
       onClick={() => void api.paneFocus(props.agent.pane)}
       className="flex h-9 w-full items-center gap-2.5 rounded-lg px-2 text-left text-body text-fg-muted transition-colors duration-150 hover:bg-hover hover:text-fg"
     >
@@ -81,13 +87,8 @@ function AgentRow(props: {
       <span className="truncate">{props.agent.label ?? props.agent.name}</span>
       {props.space && <span className="truncate text-fg-subtle text-xs">{props.space}</span>}
       <span className="ml-auto shrink-0 text-fg-subtle text-xs tabular-nums">{props.elapsed}</span>
-      {ctx?.percent != null && ctx.limit !== null && (
-        <Tooltip
-          label={
-            t("contextOf", { pct: Math.round(ctx.percent), limit: compact(ctx.limit) }) +
-            (ctx.model ? ` · ${ctx.model}` : "")
-          }
-        >
+      {ctx?.percent != null && context && (
+        <Tooltip label={context}>
           <span className="flex shrink-0 items-center gap-1 text-fg-subtle text-xs tabular-nums">
             <Ring percent={ctx.percent} />
             {Math.round(ctx.percent)}%

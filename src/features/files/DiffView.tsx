@@ -17,10 +17,10 @@ const IMAGE = /\.(png|jpe?g|gif|webp|bmp|ico|svg)$/i;
 async function loadImages(space: SpaceId, change: Change) {
   const { status, path, from } = change;
   const [before, after] = await Promise.all([
-    status === "A" || status === "U" ? null : api.gitShowImage(space, from ?? path),
-    status === "D" ? null : api.fileRead(space, path),
+    status === "A" || status === "U" ? null : api.changeImage(space, from ?? path, true),
+    status === "D" ? null : api.changeImage(space, path, false),
   ]);
-  return { before, after: after?.kind === "image" ? after.dataUrl : null };
+  return { before, after };
 }
 
 function ImageSide({ label, src }: { label: string; src: string | null }) {
@@ -87,35 +87,41 @@ export function DiffView({
           <span className="min-w-0 truncate font-medium text-fg">{name}</span>
           {dir && <span className="min-w-0 shrink-[2] truncate text-fg-subtle text-xs">{dir}</span>}
         </span>
-        {/* biome-ignore lint/a11y/useSemanticElements: a <fieldset> brings its own border and layout */}
-        <div
-          role="group"
-          aria-label={t("diffStyle")}
-          className="flex shrink-0 rounded-lg bg-hover p-0.5"
-        >
-          {[false, true].map((value) => (
-            <button
-              key={String(value)}
-              type="button"
-              aria-pressed={split === value}
-              onClick={() => choose(value)}
-              className={`h-6 rounded-md px-2 text-xs transition-colors ${
-                split === value
-                  ? "bg-pane text-fg shadow-sm ring-1 ring-line"
-                  : "text-fg-muted hover:text-fg"
-              }`}
-            >
-              {t(value ? "diffSplit" : "diffUnified")}
-            </button>
-          ))}
-        </div>
+        {!isImage && (
+          // biome-ignore lint/a11y/useSemanticElements: a <fieldset> brings its own border and layout
+          <div
+            role="group"
+            aria-label={t("diffStyle")}
+            className="flex shrink-0 rounded-lg bg-hover p-0.5"
+          >
+            {[false, true].map((value) => (
+              <button
+                key={String(value)}
+                type="button"
+                aria-pressed={split === value}
+                onClick={() => choose(value)}
+                className={`h-6 rounded-md px-2 text-xs transition-colors ${
+                  split === value
+                    ? "bg-pane text-fg shadow-sm ring-1 ring-line"
+                    : "text-fg-muted hover:text-fg"
+                }`}
+              >
+                {t(value ? "diffSplit" : "diffUnified")}
+              </button>
+            ))}
+          </div>
+        )}
       </div>
       {isImage ? (
-        images.data && (
-          <div className="flex min-h-0 flex-1">
-            <ImageSide label={t("diffBefore")} src={images.data.before} />
-            <ImageSide label={t("diffAfter")} src={images.data.after} />
-          </div>
+        images.error !== undefined ? (
+          <p className="px-3 py-3 text-body text-fg-subtle">{images.error}</p>
+        ) : (
+          images.data && (
+            <div className="flex min-h-0 flex-1">
+              <ImageSide label={t("diffBefore")} src={images.data.before} />
+              <ImageSide label={t("diffAfter")} src={images.data.after} />
+            </div>
+          )
         )
       ) : error !== undefined ? (
         <p className="px-3 py-3 text-body text-fg-subtle">{error}</p>

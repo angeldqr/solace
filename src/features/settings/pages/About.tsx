@@ -1,6 +1,7 @@
 import { getVersion } from "@tauri-apps/api/app";
 import { useEffect, useState } from "react";
 import { t } from "../../../shared/i18n";
+import { api } from "../../../shared/ipc";
 import { Button } from "../../../shared/ui/Button";
 import { checkNow, restartToUpdate, useUpdate } from "../../updates/updates";
 import { Card, Row, Section } from "../layout";
@@ -45,6 +46,11 @@ export function About() {
         </Row>
         <Row title={t("license")}>
           <span className="text-fg-muted text-xs">Apache-2.0</span>
+        </Row>
+        <Row title={t("logs")}>
+          <Button size="sm" onClick={() => void api.openLogDir()}>
+            {t("openLogsFolder")}
+          </Button>
         </Row>
         <Row title={t("privacy")} description={t("privacyNote")}>
           {null}

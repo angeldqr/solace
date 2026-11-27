@@ -27,6 +27,34 @@ pub struct AgentDef {
     packages: Vec<String>,
     #[serde(default, rename = "rule")]
     rules: Vec<Rule>,
+    /// Where the agent prints how full its context is, for agents with no better source.
+    context: Option<ContextRule>,
+}
+
+/// A footer pattern with named groups: `used` ("11.0K", "1.2M", "8500"), `pct` (percent used)
+/// and/or `left` (percent left).
+#[derive(Debug, Deserialize)]
+struct ContextRule {
+    region: Region,
+    #[serde(deserialize_with = "regex")]
+    regex: Regex,
+}
+
+/// Context use as an agent's own screen shows it; either part may be missing.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct ScreenContext {
+    pub used: Option<u64>,
+    pub percent: Option<f64>,
+}
+
+/// "11.0K" -> 11000, "1.2M" -> 1200000, "8500" -> 8500.
+fn parse_count(s: &str) -> Option<u64> {
+    let (num, scale) = match s.chars().last()? {
+        'K' | 'k' => (&s[..s.len() - 1], 1e3),
+        'M' => (&s[..s.len() - 1], 1e6),
+        _ => (s, 1.0),
+    };
+    Some((num.parse::<f64>().ok()? * scale).round() as u64)
 }
 
 #[derive(Debug, Deserialize)]
@@ -128,6 +156,17 @@ impl AgentDef {
     /// The command that starts this agent in a shell.
     pub fn command(&self) -> Option<&str> {
         self.executables.first().map(String::as_str)
+    }
+
+    /// How full the context is according to the screen footer; `None` without a rule or a match.
+    pub fn context_from_screen(&self, rows: &[String]) -> Option<ScreenContext> {
+        let rule = self.context.as_ref()?;
+        let text = rule.region.text("", rows);
+        let caps = rule.regex.captures(&text)?;
+        let num = |name: &str| caps.name(name).and_then(|m| m.as_str().parse::<f64>().ok());
+        let used = caps.name("used").and_then(|m| parse_count(m.as_str()));
+        let percent = num("pct").or_else(|| num("left").map(|left| 100.0 - left));
+        (used.is_some() || percent.is_some()).then_some(ScreenContext { used, percent })
     }
 
     /// The state the screen shows, from the first matching rule; `None` when no rule applies.
@@ -291,6 +330,34 @@ mod tests {
 
         let busy = screen(&["✻ Thinking… (3s · esc to interrupt)", "", "❯ "]);
         assert_eq!(claude.detect("", &busy), Some(AgentState::Working));
+    }
+
+    #[test]
+    fn context_is_read_from_the_footer() {
+        let opencode = agent("opencode");
+        let ctx = opencode
+            .context_from_screen(&screen(&["answer", "  ctrl+p commands   11.0K (1%)"]))
+            .unwrap();
+        assert_eq!((ctx.used, ctx.percent), (Some(11_000), Some(1.0)));
+        let big = opencode
+            .context_from_screen(&screen(&["1.2M (45.5%)"]))
+            .unwrap();
+        assert_eq!((big.used, big.percent), (Some(1_200_000), Some(45.5)));
+        assert!(
+            opencode
+                .context_from_screen(&screen(&["nothing here"]))
+                .is_none()
+        );
+
+        let ctx = agent("codex")
+            .context_from_screen(&screen(&["gpt-5 · 83% context left · ~/proj"]))
+            .unwrap();
+        assert_eq!((ctx.used, ctx.percent), (None, Some(17.0)));
+        assert!(
+            agent("claude")
+                .context_from_screen(&screen(&["11.0K (1%)"]))
+                .is_none()
+        );
     }
 
     #[test]

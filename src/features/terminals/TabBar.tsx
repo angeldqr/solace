@@ -1,6 +1,6 @@
 import { Menu } from "@base-ui/react/menu";
 import { ChevronDown, Plus, SquareTerminal, X } from "lucide-react";
-import { type KeyboardEvent, useState } from "react";
+import { type KeyboardEvent, useEffect, useState } from "react";
 import { useAgents } from "../../shared/agents";
 import { t } from "../../shared/i18n";
 import { api, type Space } from "../../shared/ipc";
@@ -14,9 +14,12 @@ const ITEM =
 
 /** Chevron next to "+": a new tab with a plain terminal or with an installed agent already running. */
 function NewTabMenu({ space }: { space: Space["id"] }) {
-  const [installed, setInstalled] = useState<[string, string][]>([]);
+  const [installed, setInstalled] = useState<[string, string][]>();
+  useEffect(() => {
+    api.agentsInstalled().then(setInstalled, () => setInstalled([]));
+  }, []);
   return (
-    <Menu.Root onOpenChange={(open) => open && api.agentsInstalled().then(setInstalled)}>
+    <Menu.Root>
       <Menu.Trigger
         aria-label={t("newTabWith")}
         className="flex size-6 items-center justify-center rounded-md text-fg-muted transition-colors duration-150 hover:bg-hover hover:text-fg"
@@ -32,12 +35,17 @@ function NewTabMenu({ space }: { space: Space["id"] }) {
               <Kbd keys="Ctrl+Shift+T" />
             </Menu.Item>
             <Menu.Separator className="my-1 h-px bg-line" />
-            {installed.length === 0 && (
+            {installed?.length === 0 && (
               <Menu.Item disabled className={ITEM}>
                 {t("noAgentsInstalled")}
               </Menu.Item>
             )}
-            {installed.map(([id, name]) => (
+            {installed === undefined && (
+              <Menu.Item disabled className={ITEM}>
+                {t("loadingAgents")}
+              </Menu.Item>
+            )}
+            {installed?.map(([id, name]) => (
               <Menu.Item key={id} className={ITEM} onClick={() => api.tabNewAgent(space, id)}>
                 <AgentIcon agent={id} className="size-4" />
                 {name}
@@ -77,7 +85,7 @@ export function TabBar({ space }: { space: Space }) {
         return (
           <div
             key={tab.id}
-            className={`group flex h-8 max-w-56 items-center rounded-lg transition-colors duration-150 ${
+            className={`group flex h-8 min-w-12 max-w-56 shrink items-center rounded-lg transition-colors duration-150 ${
               active
                 ? "bg-selected text-fg shadow-[inset_0_0_0_1px_var(--color-line)]"
                 : "text-fg-muted hover:bg-hover hover:text-fg"
@@ -114,14 +122,16 @@ export function TabBar({ space }: { space: Space }) {
           </div>
         );
       })}
-      <IconButton
-        label={t("newTerminal")}
-        shortcut="Ctrl+Shift+T"
-        onClick={() => api.tabNew(space.id)}
-      >
-        <Plus aria-hidden />
-      </IconButton>
-      <NewTabMenu space={space.id} />
+      <div className="flex shrink-0 items-center">
+        <IconButton
+          label={t("newTerminal")}
+          shortcut="Ctrl+Shift+T"
+          onClick={() => api.tabNew(space.id)}
+        >
+          <Plus aria-hidden />
+        </IconButton>
+        <NewTabMenu space={space.id} />
+      </div>
     </div>
   );
 }

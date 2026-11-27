@@ -90,10 +90,11 @@ export const api = {
     untracked: boolean,
     ignoreWhitespace: boolean,
   ) => invoke<string>("git_diff", { space, path, from, untracked, ignoreWhitespace }),
-  gitShowImage: (space: SpaceId, path: string) =>
-    invoke<string | null>("git_show_image", { space, path }),
+  changeImage: (space: SpaceId, path: string, atHead: boolean) =>
+    invoke<string | null>("change_image", { space, path, atHead }),
   fileOpen: (space: SpaceId, path: string) => invoke("file_open", { space, path }),
   openUrl: (url: string) => invoke("open_url", { url }),
+  openLogDir: () => invoke("open_log_dir"),
   fileRead: (space: SpaceId, path: string) => invoke<FileContent>("file_read", { space, path }),
   shellsList: () => invoke<Shell[]>("shells_list"),
   settingsGet: () => invoke<{ shell: string | null; notifications: boolean }>("settings_get"),

@@ -116,8 +116,17 @@ pub fn watch(app: AppHandle) {
         let state = app.state::<Shared>();
         let mut state = state.lock().unwrap();
         let mut notices = Vec::new();
-        if update(&mut state, scanned.then_some(&processes), &mut notices) {
+        let mut usage_changed = false;
+        if update(
+            &mut state,
+            scanned.then_some(&processes),
+            &mut notices,
+            &mut usage_changed,
+        ) {
             let _ = app.emit("agents", views(&state));
+        }
+        if usage_changed {
+            let _ = app.emit("usage", crate::usage::view(&state));
         }
         if crate::tasks::observe(&mut state) {
             let _ = app.emit("tasks", crate::tasks::views(&state));
@@ -186,13 +195,19 @@ fn deliver(app: &AppHandle, notices: Vec<Pending>, locale: &str) {
 
 /// True when anything the UI shows changed. Agents are re-identified only after a fresh scan;
 /// between scans the screen is still read every tick.
-fn update(state: &mut AppState, scan: Option<&Processes>, notices: &mut Vec<Pending>) -> bool {
+fn update(
+    state: &mut AppState,
+    scan: Option<&Processes>,
+    notices: &mut Vec<Pending>,
+    usage_changed: &mut bool,
+) -> bool {
     let AppState {
         ptys,
         agents,
         names,
         session,
         reports,
+        usage,
         ..
     } = state;
     reports.retain(|pane, _| ptys.contains_key(pane));
@@ -227,6 +242,7 @@ fn update(state: &mut AppState, scan: Option<&Processes>, notices: &mut Vec<Pend
         if entry.def.id != def.id {
             names.remove(pane);
             reports.remove(pane);
+            *usage_changed |= usage.screens.remove(pane).is_some();
             *entry = AgentEntry {
                 def,
                 tracker: StateTracker::default(),
@@ -236,6 +252,12 @@ fn update(state: &mut AppState, scan: Option<&Processes>, notices: &mut Vec<Pend
             changed = true;
         }
         let screen = pty.snapshot();
+        // Kept when the footer is hidden (a dialog, a resize), so the number doesn't flicker.
+        if let Some(ctx) = def.context_from_screen(&screen.rows)
+            && usage.screens.insert(*pane, ctx) != Some(ctx)
+        {
+            *usage_changed = true;
+        }
         let streaming = pty.busy_for().is_some_and(|busy| busy >= WORKING_AFTER);
         let fallback = if streaming {
             AgentState::Working
@@ -288,5 +310,8 @@ fn update(state: &mut AppState, scan: Option<&Processes>, notices: &mut Vec<Pend
             }
         }
     }
+    let known = usage.screens.len();
+    usage.screens.retain(|pane, _| agents.contains_key(pane));
+    *usage_changed |= known != usage.screens.len();
     changed
 }

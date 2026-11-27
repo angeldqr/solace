@@ -164,6 +164,9 @@ enum TaskCommand {
         /// You could not finish; the summary says why.
         #[arg(long)]
         failed: bool,
+        /// A review with nothing to fix: report without commits on the branch.
+        #[arg(long)]
+        no_changes: bool,
     },
 }
 
@@ -287,6 +290,7 @@ fn request(command: Command) -> Result<Request, String> {
             summary,
             summary_file,
             failed,
+            no_changes,
         }) => Request::TaskDone {
             task: task_env()?,
             pane: caller_pane(),
@@ -303,6 +307,7 @@ fn request(command: Command) -> Result<Request, String> {
                 (None, None) => return Err("give --summary or --summary-file".into()),
             },
             failed,
+            no_changes,
         },
         Command::Skill { .. } | Command::Hook { .. } | Command::Statusline { .. } => {
             return Err("not a request".into());
@@ -413,9 +418,24 @@ fn statusline(tee: bool) -> ExitCode {
     ExitCode::SUCCESS
 }
 
+/// Run by the uninstaller: takes Solace's hooks and skill out of the agents' configs. Never fails
+/// the uninstall, and prints nothing.
+fn remove_integration(home: &std::path::Path) {
+    let _ = solace_infra::integrations::uninstall_claude(
+        &solace_infra::integrations::ClaudePaths::in_home(home),
+    );
+}
+
 fn main() -> ExitCode {
     // Before clap: a usage error exits 2, which Claude Code reads as "block this".
     match std::env::args().nth(1).as_deref() {
+        Some("integration") => {
+            if let Some(home) = std::env::var_os("USERPROFILE").or_else(|| std::env::var_os("HOME"))
+            {
+                remove_integration(std::path::Path::new(&home));
+            }
+            return ExitCode::SUCCESS;
+        }
         Some("hook") => return hook(),
         Some("statusline") => return statusline(std::env::args().any(|a| a == "--tee")),
         _ => {}
@@ -460,5 +480,23 @@ fn main() -> ExitCode {
             eprintln!("solace: {message}");
             ExitCode::FAILURE
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn integration_remove_strips_what_install_added() {
+        use solace_infra::integrations::{ClaudePaths, claude_installed, install_claude};
+        let home = std::env::temp_dir().join(format!("solace-cli-remove-{}", std::process::id()));
+        let paths = ClaudePaths::in_home(&home);
+        std::fs::create_dir_all(paths.settings.parent().unwrap()).unwrap();
+        let exe = home.join("solace.exe");
+        std::fs::write(&exe, "").unwrap();
+        install_claude(&paths, &exe).unwrap();
+        assert!(claude_installed(&paths));
+        super::remove_integration(&home);
+        assert!(!claude_installed(&paths) && !paths.agents_skill.exists());
+        std::fs::remove_dir_all(&home).unwrap();
     }
 }

@@ -18,12 +18,14 @@ tauri-build = { version = "2", features = [] }
 [dependencies]
 base64 = "0.23"
 notify = "9"
+log = "0.4"
 serde.workspace = true
 serde_json.workspace = true
 solace-core = { path = "../crates/solace-core" }
 solace-infra = { path = "../crates/solace-infra" }
 tauri = { version = "2", features = [] }
 tauri-plugin-dialog = "2"
+tauri-plugin-log = "2"
 tauri-plugin-notification = "2"
 tauri-plugin-opener = "2"
 tauri-plugin-process = "2"

@@ -119,7 +119,8 @@ pub fn handle(app: &AppHandle, request: Request) -> Response {
             pane,
             summary,
             failed,
-        } => crate::tasks::done(app, &task, pane, &summary, failed),
+            no_changes,
+        } => crate::tasks::done(app, &task, pane, &summary, failed, no_changes),
         Request::UsageReport { pane, status } => {
             crate::usage::report(app, pane, &status);
             Ok(json!({}))

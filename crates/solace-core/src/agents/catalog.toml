@@ -42,6 +42,10 @@ name = "Codex"
 executables = ["codex"]
 packages = ["@openai/codex"]
 
+[agent.context]
+region = "bottom:6"
+regex = '(?P<left>\d+)% context left'
+
 [[agent.rule]]
 state = "blocked"
 region = "title"
@@ -72,6 +76,8 @@ id = "antigravity"
 name = "Antigravity CLI"
 executables = ["agy"]
 packages = []
+
+# TODO: no `agent.context` yet; find where Antigravity prints its context use.
 
 # TODO: these rules are carried over from Gemini CLI; check them against the real Antigravity UI.
 [[agent.rule]]
@@ -120,6 +126,10 @@ id = "opencode"
 name = "OpenCode"
 executables = ["opencode"]
 packages = ["opencode-ai"]
+
+[agent.context]
+region = "bottom:6"
+regex = '(?P<used>\d+(?:\.\d+)?[KkM]?)\s+\((?P<pct>\d+(?:\.\d+)?)%\)'
 
 [[agent.rule]]
 state = "blocked"
