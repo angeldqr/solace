@@ -7,7 +7,7 @@ import { activityFor } from "./activity";
 export function startPresence() {
   let sent = "";
   const sync = () => {
-    const next = useSettings.getState().discordPresence
+    const next = useSettings.getState().discordActivity
       ? activityFor(useAgents.getState().list, current().pane)
       : null;
     const key = JSON.stringify(next);

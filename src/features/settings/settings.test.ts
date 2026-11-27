@@ -23,10 +23,11 @@ describe("parseSettings", () => {
     expect(parseSettings({ theme: "daylight", appearance: "dark" }).appearance).toBe("dark");
   });
 
-  it("keeps Discord presence off unless explicitly enabled", () => {
-    expect(defaults.discordPresence).toBe(false);
-    expect(parseSettings({ discordPresence: "yes" }).discordPresence).toBe(false);
-    expect(parseSettings({ discordPresence: true }).discordPresence).toBe(true);
+  it("shows Discord activity unless turned off, ignoring the old opt-in key", () => {
+    expect(defaults.discordActivity).toBe(true);
+    expect(parseSettings({ discordPresence: false }).discordActivity).toBe(true);
+    expect(parseSettings({ discordActivity: "no" }).discordActivity).toBe(true);
+    expect(parseSettings({ discordActivity: false }).discordActivity).toBe(false);
   });
 
   it("falls back on bad values", () => {

@@ -41,8 +41,8 @@ export interface Settings {
   diffLayout: "unified" | "split";
   diffColors: "red-green" | "blue-orange";
   diffIgnoreWhitespace: boolean;
-  /** Show the agent in use on Discord; opt-in. */
-  discordPresence: boolean;
+  /** Show the agent in use on Discord (never folders or projects). */
+  discordActivity: boolean;
 }
 
 export const MAX_CSS = 100000;
@@ -75,7 +75,7 @@ export const DEFAULTS: Settings = {
   diffLayout: "unified",
   diffColors: "red-green",
   diffIgnoreWhitespace: false,
-  discordPresence: false,
+  discordActivity: true,
 };
 
 /** Stored settings, field by field: a bad value falls back to its default instead of breaking
@@ -153,7 +153,8 @@ export function parseSettings(value: unknown, legacy: Legacy = {}): Settings {
     ),
     diffColors: oneOf(raw.diffColors, ["red-green", "blue-orange"], DEFAULTS.diffColors),
     diffIgnoreWhitespace: bool(raw.diffIgnoreWhitespace, DEFAULTS.diffIgnoreWhitespace),
-    discordPresence: bool(raw.discordPresence, DEFAULTS.discordPresence),
+    // The old "discordPresence" key was saved as false by default; it is ignored so the new default applies.
+    discordActivity: bool(raw.discordActivity, DEFAULTS.discordActivity),
   };
 }
 

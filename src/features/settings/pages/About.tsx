@@ -2,17 +2,22 @@ import { getVersion } from "@tauri-apps/api/app";
 import { useEffect, useState } from "react";
 import { t } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
-import { restartToUpdate, useUpdate } from "../../updates/updates";
+import { checkNow, restartToUpdate, useUpdate } from "../../updates/updates";
 import { Card, Row, Section } from "../layout";
-import { useSettings } from "../settings";
+
+type Check = "idle" | "checking" | "upToDate" | "ready" | "failed";
 
 export function About() {
   const [version, setVersion] = useState("");
+  const [check, setCheck] = useState<Check>("idle");
   const update = useUpdate((s) => s.ready);
-  const checkUpdates = useSettings((s) => s.checkUpdates);
   useEffect(() => {
     void getVersion().then(setVersion);
   }, []);
+  const search = async () => {
+    setCheck("checking");
+    setCheck(await checkNow());
+  };
   return (
     <Section title="Solace">
       <Card>
@@ -23,7 +28,19 @@ export function About() {
               {t("restartToUpdate", { version: update.version })}
             </Button>
           ) : (
-            checkUpdates && <span className="text-fg-muted text-xs">{t("upToDate")}</span>
+            <>
+              {(check === "upToDate" || check === "failed") && (
+                <span
+                  role="status"
+                  className={`text-xs ${check === "failed" ? "text-danger" : "text-fg-muted"}`}
+                >
+                  {t(check === "failed" ? "updateCheckFailed" : "upToDate")}
+                </span>
+              )}
+              <Button size="sm" disabled={check === "checking"} onClick={() => void search()}>
+                {t(check === "checking" ? "checkingUpdates" : "checkForUpdates")}
+              </Button>
+            </>
           )}
         </Row>
         <Row title={t("license")}>

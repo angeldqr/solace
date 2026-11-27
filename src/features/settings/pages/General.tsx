@@ -51,7 +51,7 @@ export function General() {
 }
 
 function Presence() {
-  const enabled = useSettings((s) => s.discordPresence);
+  const enabled = useSettings((s) => s.discordActivity);
   const [available, setAvailable] = useState(false);
   useEffect(() => {
     void api
@@ -78,7 +78,7 @@ function Presence() {
           <Switch
             checked={enabled}
             label={t("discordPresence")}
-            onCheckedChange={(value) => updateSettings({ discordPresence: value })}
+            onCheckedChange={(value) => updateSettings({ discordActivity: value })}
           />
         </Row>
         {enabled && status > 0 && (
