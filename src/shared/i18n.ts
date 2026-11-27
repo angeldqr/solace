@@ -221,6 +221,10 @@ const en = {
   discordPresence: "Show activity in Discord",
   discordPresenceHint:
     "Shows which coding agent you're using (never folder or project names). Discord must be open.",
+  presenceStatus1: "Connecting to Discord…",
+  presenceStatus2: "Shown in Discord",
+  presenceStatus3: "Discord isn't open",
+  presenceStatus4: "Discord refused the activity",
   presenceCodingWith: "Coding with {agent}",
   presenceInSolace: "In the terminal",
   presenceAgentWorking: "1 agent working",
@@ -463,6 +467,10 @@ const es: Messages = {
   discordPresence: "Mostrar actividad en Discord",
   discordPresenceHint:
     "Muestra qué agente de programación usas (nunca nombres de carpetas ni proyectos). Discord debe estar abierto.",
+  presenceStatus1: "Conectando con Discord…",
+  presenceStatus2: "Visible en Discord",
+  presenceStatus3: "Discord no está abierto",
+  presenceStatus4: "Discord rechazó la actividad",
   presenceCodingWith: "Programando con {agent}",
   presenceInSolace: "En la terminal",
   presenceAgentWorking: "1 agente trabajando",

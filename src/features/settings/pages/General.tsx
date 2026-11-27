@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { t } from "../../../shared/i18n";
+import { type MessageKey, t } from "../../../shared/i18n";
 import { api } from "../../../shared/ipc";
 import { Select } from "../../../shared/ui/Select";
 import { Switch } from "../../../shared/ui/Switch";
@@ -59,6 +59,17 @@ function Presence() {
       .then(setAvailable)
       .catch(() => {});
   }, []);
+  const [status, setStatus] = useState(0);
+  useEffect(() => {
+    if (!enabled) {
+      setStatus(0);
+      return;
+    }
+    const poll = () => void api.presenceStatus().then(setStatus, () => {});
+    poll();
+    const id = setInterval(poll, 2000);
+    return () => clearInterval(id);
+  }, [enabled]);
   if (!available) return null;
   return (
     <Section title="Discord">
@@ -70,6 +81,11 @@ function Presence() {
             onCheckedChange={(value) => updateSettings({ discordPresence: value })}
           />
         </Row>
+        {enabled && status > 0 && (
+          <p role="status" className="px-4 pb-3 text-fg-muted text-xs">
+            {t(`presenceStatus${status}` as MessageKey)}
+          </p>
+        )}
       </Card>
     </Section>
   );

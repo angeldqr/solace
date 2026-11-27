@@ -99,6 +99,7 @@ export const api = {
   claudeIntegrationSet: (enabled: boolean) => invoke("claude_integration_set", { enabled }),
   usageGet: () => invoke<UsageView>("usage_get"),
   presenceAvailable: () => invoke<boolean>("presence_available"),
+  presenceStatus: () => invoke<number>("presence_status"),
   presenceUpdate: (activity: PresenceActivity | null) => invoke("presence_update", { activity }),
   shellSet: (path: string | null) => invoke("shell_set", { path }),
   tasksGet: () => invoke<BatchView[]>("tasks_get"),

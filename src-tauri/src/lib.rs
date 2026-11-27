@@ -124,6 +124,7 @@ pub fn run() {
             tasks::tasks_clean,
             presence::presence_available,
             presence::presence_update,
+            presence::presence_status,
             commands::space_open,
             commands::space_close,
             commands::space_activate,

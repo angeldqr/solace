@@ -3,6 +3,7 @@
 
 use std::io::{self, Read, Write};
 use std::sync::OnceLock;
+use std::sync::atomic::{AtomicU8, Ordering};
 use std::sync::mpsc::{self, RecvTimeoutError, Sender};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
@@ -29,6 +30,14 @@ pub struct PresenceActivity {
     state: Option<String>,
     small_image: Option<String>,
     small_text: Option<String>,
+}
+
+/// 0 off, 1 connecting, 2 shown in Discord, 3 Discord not running, 4 Discord refused it.
+static STATUS: AtomicU8 = AtomicU8::new(0);
+
+#[tauri::command]
+pub fn presence_status() -> u8 {
+    STATUS.load(Ordering::Relaxed)
 }
 
 enum Msg {
@@ -61,6 +70,9 @@ pub fn presence_update(activity: Option<PresenceActivity>) {
             tx
         }),
     };
+    if activity.is_some() && STATUS.load(Ordering::Relaxed) == 0 {
+        STATUS.store(1, Ordering::Relaxed);
+    }
     let _ = tx.send(activity.map_or(Msg::Clear, Msg::Set));
 }
 
@@ -266,6 +278,7 @@ fn run(rx: mpsc::Receiver<Msg>, start: u64) {
             Ok(Msg::Clear) => {
                 desired = None;
                 dirty = false;
+                STATUS.store(0, Ordering::Relaxed);
                 // Not throttled: leaving must not wait. Dropping the connection closes it.
                 if let Some(mut c) = conn.take() {
                     nonce += 1;
@@ -285,6 +298,7 @@ fn run(rx: mpsc::Receiver<Msg>, start: u64) {
                 match connect() {
                     Ok(c) => conn = Some(c),
                     Err(_) => {
+                        STATUS.store(3, Ordering::Relaxed);
                         retry_at = Instant::now() + RECONNECT_EVERY;
                         break;
                     }
@@ -293,11 +307,13 @@ fn run(rx: mpsc::Receiver<Msg>, start: u64) {
             nonce += 1;
             let c = conn.as_mut().expect("connected above");
             if set_activity(&mut **c, desired.as_ref(), start, nonce).is_ok() {
+                STATUS.store(2, Ordering::Relaxed);
                 dirty = false;
                 last_sent = Some(Instant::now());
                 break;
             }
             conn = None;
+            STATUS.store(4, Ordering::Relaxed);
             if attempt == 1 {
                 retry_at = Instant::now() + RECONNECT_EVERY;
             }
