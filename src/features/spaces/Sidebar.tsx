@@ -39,7 +39,7 @@ export function Sidebar() {
         data-tauri-drag-region
         className={`flex h-11 shrink-0 items-center gap-2 ${IS_MAC ? "pr-4 pl-20" : "px-4"}`}
       >
-        <img src="/solace.svg" alt="" className="pointer-events-none size-5" />
+        <img src="/solace-mark.svg" alt="" className="pointer-events-none size-5" />
         <span className="pointer-events-none font-semibold text-sm tracking-tight">Solace</span>
       </div>
       <SectionHeader title={t("spaces")}>

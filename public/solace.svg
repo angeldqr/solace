@@ -1,14 +1,1 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
-  <title>Solace</title>
-  <defs>
-    <linearGradient id="sun" x1="0" y1="1" x2="0" y2="0">
-      <stop offset="0" stop-color="#5b6cff"/>
-      <stop offset="1" stop-color="#b9c4ff"/>
-    </linearGradient>
-  </defs>
-  <rect width="1024" height="1024" rx="224" fill="#000"/>
-  <rect x="8" y="8" width="1008" height="1008" rx="216" fill="none" stroke="#fff" stroke-opacity=".1" stroke-width="16"/>
-  <path d="M272 600a240 240 0 0 1 480 0z" fill="url(#sun)"/>
-  <rect x="224" y="648" width="576" height="40" rx="20" fill="#fff" fill-opacity=".9"/>
-  <rect x="224" y="728" width="200" height="40" rx="20" fill="#fff" fill-opacity=".35"/>
-</svg>
+<svg viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg"><title>Solace</title><defs><linearGradient id="g" x1="0" y1="1" x2="0" y2="0"><stop offset="0" stop-color="#5b5ff0"/><stop offset="1" stop-color="#b4bcff"/></linearGradient></defs><rect width="1024" height="1024" rx="225" fill="#000"/><rect x="6" y="6" width="1012" height="1012" rx="219" fill="none" stroke="#fff" stroke-opacity=".09" stroke-width="12"/><g transform="translate(512 512) scale(.74) translate(-512 -512)"><path fill-rule="evenodd" d="M182,512a330,330 0 1,0 660,0a330,330 0 1,0 -660,0ZM344.4,399.6L456.8,512L344.4,624.4L399.6,679.6L567.2,512L399.6,344.4ZM598,614h74a38,38 0 0 1 38,38v0a38,38 0 0 1 -38,38h-74a38,38 0 0 1 -38,-38v0a38,38 0 0 1 38,-38Z" fill="url(#g)"/></g></svg>
