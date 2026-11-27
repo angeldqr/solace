@@ -34,9 +34,14 @@ impl ClaudePaths {
 /// keeps any failure, such as Solace being uninstalled, from blocking Claude.
 fn hook_command(solace_exe: &Path) -> String {
     format!(
-        "\"{}\" hook --source {MARKER} 2>/dev/null || true",
-        bash_path(solace_exe)
+        "{} hook --source {MARKER} 2>/dev/null || true",
+        quote(bash_path(solace_exe))
     )
+}
+
+/// The path as one bash word. Double quotes would still expand `$` and backticks in a folder name.
+fn quote(path: String) -> String {
+    format!("'{}'", path.replace('\'', r"'\''"))
 }
 
 fn bash_path(exe: &Path) -> String {
@@ -54,11 +59,11 @@ const WRAP: &str = " 2>/dev/null || cat; } | {\n";
 /// Claude Code's status line command: ours alone, or ours teeing the status JSON into the user's
 /// `original`. The newlines keep a trailing `# comment` in the original from eating the brace.
 fn statusline_command(solace_exe: &Path, original: Option<&str>) -> String {
-    let exe = bash_path(solace_exe);
+    let exe = quote(bash_path(solace_exe));
     match original {
-        None => format!("\"{exe}\" statusline --source {MARKER} 2>/dev/null || true"),
+        None => format!("{exe} statusline --source {MARKER} 2>/dev/null || true"),
         Some(orig) => {
-            format!("{{ \"{exe}\" statusline --tee --source {MARKER}{WRAP}{orig}\n}}")
+            format!("{{ {exe} statusline --tee --source {MARKER}{WRAP}{orig}\n}}")
         }
     }
 }
@@ -348,8 +353,8 @@ mod tests {
         let settings = read_settings(&paths.settings).unwrap();
         let command = settings["statusLine"]["command"].as_str().unwrap();
         assert!(
-            command.starts_with("{ \"")
-                && command.contains("solace2.exe\" statusline --tee --source solace-hook")
+            command.starts_with("{ '")
+                && command.contains("solace2.exe' statusline --tee --source solace-hook")
         );
         assert!(command.contains("|| cat; } | {\n"));
         // Text added after the closing brace: not ours to restore.
@@ -402,7 +407,24 @@ mod tests {
         ));
         assert_eq!(
             command,
-            "\"C:/Users/Ana B/AppData/Local/Solace/bin/solace.exe\" hook --source solace-hook 2>/dev/null || true"
+            "'C:/Users/Ana B/AppData/Local/Solace/bin/solace.exe' hook --source solace-hook 2>/dev/null || true"
         );
+        assert_eq!(quote("/a/it's $HOME".into()), r"'/a/it'\''s $HOME'");
+    }
+
+    #[test]
+    fn entries_in_the_old_double_quoted_form_are_still_removed() {
+        let old = r#"{ "C:/Solace/solace.exe" statusline --tee --source solace-hook 2>/dev/null || cat; } | {
+a && b
+}"#;
+        assert_eq!(original_statusline(old), Some(Some("a && b".to_string())));
+        let mut settings = read_settings(Path::new("none")).unwrap();
+        settings.insert(
+            "hooks".into(),
+            json!({ "Stop": [{ "hooks": [{ "type": "command",
+                "command": "\"C:/Solace/solace.exe\" hook --source solace-hook 2>/dev/null || true" }] }] }),
+        );
+        strip_ours(&mut settings);
+        assert!(settings.get("hooks").is_none());
     }
 }

@@ -13,6 +13,16 @@ pub fn endpoint_name(user: &str, nonce: u64) -> String {
     format!("solace-{user}-{nonce:016x}.sock")
 }
 
+/// What goes over the wire: the request plus the secret of the pane it comes from
+/// (`SOLACE_PANE_TOKEN`), which is what tells the app who is calling.
+#[derive(Debug, Serialize, Deserialize)]
+pub struct Envelope {
+    #[serde(default)]
+    pub token: String,
+    #[serde(flatten)]
+    pub request: Request,
+}
+
 /// One request per connection, sent as a single JSON line; the reply is one JSON line too.
 /// `target` accepts a pane id or the name given to an agent at start.
 #[derive(Debug, Serialize, Deserialize)]
@@ -140,6 +150,25 @@ mod tests {
                 ..
             }
         ));
+    }
+
+    #[test]
+    fn envelope_carries_the_token_beside_the_request() {
+        let json = serde_json::to_string(&Envelope {
+            token: "abc".into(),
+            request: Request::PaneList,
+        })
+        .unwrap();
+        let back: Envelope = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.token, "abc");
+        assert!(matches!(back.request, Request::PaneList));
+        let bare: Envelope = serde_json::from_str(r#"{"method":"pane.list"}"#).unwrap();
+        assert!(bare.token.is_empty());
+        let with_params: Envelope = serde_json::from_str(
+            r#"{"token":"t","method":"agent.wait","params":{"target":"a","timeout_secs":1}}"#,
+        )
+        .unwrap();
+        assert!(matches!(with_params.request, Request::AgentWait { .. }));
     }
 
     #[test]

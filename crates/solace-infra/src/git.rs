@@ -12,9 +12,7 @@ pub fn current_branch(dir: &Path) -> Option<String> {
     dir.ancestors().find_map(|d| {
         let dot_git = d.join(".git");
         let git_dir = if dot_git.is_file() {
-            // Worktrees and submodules: `.git` is a file pointing at the real git dir.
-            let pointer = fs::read_to_string(&dot_git).ok()?;
-            d.join(pointer.strip_prefix("gitdir:")?.trim())
+            gitdir_pointer(d)?
         } else {
             dot_git
         };
@@ -25,6 +23,33 @@ pub fn current_branch(dir: &Path) -> Option<String> {
             None => head.get(..7).map(str::to_string),
         }
     })
+}
+
+/// Where the `.git` file in `d` points: worktrees and submodules keep the real git dir elsewhere.
+/// A folder can't send us to a network share, or to a place that is no ancestor of itself (a
+/// worktree's git dir is inside its repository, which is one).
+fn gitdir_pointer(d: &Path) -> Option<PathBuf> {
+    let text = fs::read_to_string(d.join(".git")).ok()?;
+    let target = text.strip_prefix("gitdir:")?.trim();
+    if target.starts_with("\\\\") || target.starts_with("//") {
+        return None;
+    }
+    let path = Path::new(target);
+    // Also "\\x" and "C:x", which `join` treats as moving off the folder.
+    if matches!(
+        path.components().next(),
+        Some(std::path::Component::RootDir | std::path::Component::Prefix(_))
+    ) {
+        let inside = format!("{}/", normal(target));
+        let under_ancestor = d
+            .ancestors()
+            .filter(|a| a.parent().is_some())
+            .any(|a| inside.starts_with(&format!("{}/", normal(&a.to_string_lossy()))));
+        if !under_ancestor {
+            return None;
+        }
+    }
+    Some(d.join(path))
 }
 
 /// A changed file, relative to the repository root.
@@ -235,6 +260,32 @@ pub fn resolve_commit(top: &Path, base: &str, wsl: bool) -> Result<String, Strin
         .map_err(|_| format!("unknown base {base}"))
 }
 
+const LINKED: &str = "refusing to create task worktrees: .solace is a link";
+
+/// A symlink, or on Windows a junction or other reparse point.
+fn is_link(path: &Path) -> bool {
+    let Ok(meta) = fs::symlink_metadata(path) else {
+        return false;
+    };
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::MetadataExt;
+        if meta.file_attributes() & 0x400 != 0 {
+            return true; // FILE_ATTRIBUTE_REPARSE_POINT
+        }
+    }
+    meta.file_type().is_symlink()
+}
+
+/// `top/.solace` and `top/.solace/worktrees` must be real folders when they exist.
+fn unlinked(top: &Path) -> Result<(), String> {
+    let solace = top.join(".solace");
+    if is_link(&solace) || is_link(&solace.join("worktrees")) {
+        return Err(LINKED.into());
+    }
+    Ok(())
+}
+
 /// Adds a worktree at `top/rel_dir` on a new branch started from `base` (a validated ref). `.solace/` gets its own
 /// `.gitignore` so worktrees never show up as changes; the user's files are not touched.
 /// Plain `git`, not `git()`: that one blanks the repository's filters, and a worktree checked out
@@ -248,9 +299,17 @@ pub fn worktree_add(
     wsl: bool,
 ) -> Result<(), String> {
     let solace = top.join(".solace");
-    fs::create_dir_all(&solace).map_err(|e| e.to_string())?;
+    let worktrees = solace.join("worktrees");
+    // A committed link could send the worktrees (and `.solace/.gitignore`) out of the repository.
+    unlinked(top)?;
+    fs::create_dir_all(&worktrees).map_err(|e| e.to_string())?;
+    unlinked(top)?;
+    let (real, real_top) = (fs::canonicalize(&worktrees), fs::canonicalize(top));
+    if !matches!((&real, &real_top), (Ok(r), Ok(t)) if r.starts_with(t)) {
+        return Err(LINKED.into());
+    }
     let ignore = solace.join(".gitignore");
-    if !ignore.exists() {
+    if fs::symlink_metadata(&ignore).is_err() {
         fs::write(&ignore, "*\n").map_err(|e| e.to_string())?;
     }
     run(worktree_command(
@@ -262,6 +321,7 @@ pub fn worktree_add(
 
 /// Removes a worktree. Without `force` git refuses one with uncommitted changes.
 pub fn worktree_remove(top: &Path, rel_dir: &str, force: bool, wsl: bool) -> Result<(), String> {
+    unlinked(top)?;
     let mut args = vec!["worktree", "remove"];
     if force {
         args.push("--force");
@@ -318,6 +378,7 @@ pub fn remove_leftover(top: &Path, dir: &Path, delays: &[Duration]) -> Result<()
     if !dir.exists() {
         return Ok(());
     }
+    unlinked(top)?;
     let root = fs::canonicalize(top.join(".solace/worktrees")).map_err(|e| e.to_string())?;
     let target = fs::canonicalize(dir).map_err(|e| e.to_string())?;
     if target == root || !target.starts_with(&root) {
@@ -446,6 +507,10 @@ pub fn status(dir: &Path) -> Result<Option<Vec<Change>>, String> {
 /// The repository's git directory, when it lives outside `dir` (`dir` is a subfolder of the
 /// repository, a worktree or a submodule): its HEAD and index must be watched separately.
 pub fn external_git_dir(dir: &Path) -> Option<std::path::PathBuf> {
+    let nearest = dir.ancestors().find(|d| d.join(".git").exists())?;
+    if nearest.join(".git").is_file() && gitdir_pointer(nearest).is_none() {
+        return None; // git would follow it
+    }
     let git_dir = git_text(dir, &["rev-parse", "--absolute-git-dir"]).ok()?;
     let git_dir = std::path::PathBuf::from(git_dir.trim());
     let dir = dir.canonicalize().ok()?;
@@ -817,6 +882,54 @@ mod tests {
             "outside .solace/worktrees: refused"
         );
         assert!(remove_leftover(&top, &top.join(".solace"), &[]).is_err());
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn a_linked_solace_folder_is_refused_and_foreign_gitdirs_ignored() {
+        let root = std::env::temp_dir().join(format!("solace-git-link-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&root);
+        let (top, outside) = (root.join("top"), root.join("outside"));
+        fs::create_dir_all(&top).unwrap();
+        fs::create_dir_all(&outside).unwrap();
+        let link = top.join(".solace");
+        #[cfg(unix)]
+        let linked = std::os::unix::fs::symlink(&outside, &link).is_ok();
+        #[cfg(windows)]
+        let linked = Command::new("cmd")
+            .args(["/C", "mklink", "/J"])
+            .arg(&link)
+            .arg(&outside)
+            .output()
+            .is_ok_and(|o| o.status.success());
+        if linked {
+            let err = worktree_add(&top, ".solace/worktrees/x", "b", "HEAD", false).unwrap_err();
+            assert!(err.contains("is a link"), "{err}");
+            assert!(remove_leftover(&top, &top.join(".solace/worktrees/x"), &[]).is_ok());
+            assert!(
+                fs::read_dir(&outside).unwrap().next().is_none(),
+                "nothing written outside"
+            );
+            #[cfg(unix)]
+            fs::remove_file(&link).unwrap();
+            #[cfg(windows)]
+            fs::remove_dir(&link).unwrap();
+        }
+
+        let sub = root.join("sub");
+        fs::create_dir_all(&sub).unwrap();
+        let pointer = |text: &str| {
+            fs::write(sub.join(".git"), text).unwrap();
+            gitdir_pointer(&sub)
+        };
+        assert!(pointer("gitdir: //server/share/x\n").is_none());
+        assert!(pointer("gitdir: \\\\server\\share\\x\n").is_none());
+        assert!(pointer("gitdir: /solace-no-such-ancestor/x\n").is_none());
+        assert!(pointer("gitdir: ../real\n").is_some());
+        let real = root.join("real");
+        assert!(pointer(&format!("gitdir: {}\n", real.display())).is_some());
+        fs::write(sub.join(".git"), "gitdir: //server/share/x\n").unwrap();
+        assert!(external_git_dir(&sub).is_none(), "git is never run on it");
         let _ = fs::remove_dir_all(&root);
     }
 

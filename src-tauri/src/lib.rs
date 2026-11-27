@@ -36,6 +36,10 @@ pub struct AppState {
     usage: usage::UsageState,
     /// Parallel task batches started by `solace tasks start`; runtime only.
     batches: Vec<tasks::Batch>,
+    /// Who each `SOLACE_PANE_TOKEN` belongs to; runtime only.
+    callers: HashMap<String, orchestration::Caller>,
+    /// The pane that opened each pane through the API, so it may type into it.
+    creators: HashMap<PaneId, PaneId>,
 }
 
 /// Where the `solace` CLI reaches this app; fixed for the life of the process.
@@ -124,11 +128,13 @@ pub fn run() {
                 locale: "en".into(),
                 usage: Default::default(),
                 batches: Vec::new(),
+                callers: HashMap::new(),
+                creators: HashMap::new(),
             }));
             files::sync_watchers(&app.state::<Shared>().lock().unwrap());
             let handle = app.handle().clone();
-            if let Err(err) = solace_infra::ipc::serve(endpoint(), move |request| {
-                orchestration::handle(&handle, request)
+            if let Err(err) = solace_infra::ipc::serve(endpoint(), move |envelope| {
+                orchestration::handle(&handle, envelope)
             }) {
                 // The app still works; only `solace` commands are unavailable.
                 eprintln!("orchestration API unavailable: {err}");

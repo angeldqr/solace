@@ -10,6 +10,7 @@ use solace_infra::{git, persist};
 use tauri::ipc::{Channel, InvokeResponseBody};
 use tauri::{AppHandle, Emitter, Manager, State};
 
+use crate::orchestration::Caller;
 use crate::{AppState, Shared};
 
 type Result<T = ()> = std::result::Result<T, String>;
@@ -263,8 +264,19 @@ pub(crate) fn spawn_shell(
         return Err(format!("{} no longer exists", cwd.display()));
     }
     let space = state.session.space_of(pane).ok_or("unknown pane")?;
+    // The pane's secret: the API trusts it, not the pane id the CLI claims.
+    let mut token = [0u8; 16];
+    getrandom::fill(&mut token).map_err(|e| format!("no randomness for the pane token: {e}"))?;
+    let token: String = token.iter().map(|b| format!("{b:02x}")).collect();
+    let task = extra_env
+        .iter()
+        .find(|(k, _)| *k == "SOLACE_TASK_ID")
+        .map(|(_, v)| v.clone());
+    state.callers.retain(|_, c| c.pane != pane);
+    state.callers.insert(token.clone(), Caller { pane, task });
     let mut env = vec![
         ("SOLACE_ENV", "1".to_string()),
+        ("SOLACE_PANE_TOKEN", token),
         ("SOLACE_PANE_ID", pane.0.to_string()),
         ("SOLACE_SPACE_ID", space.0.to_string()),
         ("SOLACE_PIPE", crate::endpoint().to_string()),
@@ -292,7 +304,8 @@ pub(crate) fn spawn_shell(
 
 /// The user's WSLENV plus Solace's variables.
 fn wslenv() -> String {
-    const OURS: &str = "SOLACE_ENV:SOLACE_PANE_ID:SOLACE_SPACE_ID:SOLACE_PIPE:SOLACE_TASK_ID";
+    const OURS: &str =
+        "SOLACE_ENV:SOLACE_PANE_ID:SOLACE_PANE_TOKEN:SOLACE_SPACE_ID:SOLACE_PIPE:SOLACE_TASK_ID";
     match std::env::var("WSLENV") {
         Ok(existing) if !existing.is_empty() => format!("{existing}:{OURS}"),
         _ => OURS.to_string(),

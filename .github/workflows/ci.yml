@@ -27,6 +27,18 @@ jobs:
       - run: pnpm lint:ci
       - run: pnpm test
       - run: pnpm build
+      # Known vulnerabilities in what ships; dev-only tooling is not bundled.
+      - run: pnpm audit --prod
+
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-audit
+      # Vulnerabilities fail the build; "unmaintained" warnings only report.
+      - run: cargo audit
 
   core:
     # Keeps the domain crate portable and free of OS/UI dependencies.

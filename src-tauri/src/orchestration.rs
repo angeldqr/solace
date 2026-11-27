@@ -4,7 +4,7 @@ use std::time::{Duration, Instant};
 
 use serde_json::{Value, json};
 use solace_core::agents::{AgentDef, AgentState, catalog};
-use solace_core::orchestration::{Request, Response};
+use solace_core::orchestration::{Envelope, Request, Response};
 use solace_core::terminals::{Direction, PaneId};
 use tauri::{AppHandle, Manager};
 
@@ -23,18 +23,124 @@ const MAX_WAIT: Duration = Duration::from_secs(24 * 60 * 60);
 
 type Result<T = Value> = std::result::Result<T, String>;
 
-pub fn handle(app: &AppHandle, request: Request) -> Response {
+/// The pane behind a `SOLACE_PANE_TOKEN`, and for a task's worker, its task.
+#[derive(Clone)]
+pub(crate) struct Caller {
+    pub pane: PaneId,
+    pub task: Option<String>,
+}
+
+/// Every request must carry its pane's token; the pane it names is the only identity trusted.
+pub fn handle(app: &AppHandle, envelope: Envelope) -> Response {
+    let caller = with_state(app, |s| {
+        let caller = s.callers.get(&envelope.token)?;
+        s.session.pane_root(caller.pane)?;
+        Some(caller.clone())
+    })
+    .ok_or("not allowed: SOLACE_PANE_TOKEN is missing or belongs to a closed pane")?;
+    let request = bind(envelope.request, caller.pane)?;
+    authorize(&request, &caller)?;
+    dispatch(app, request, &caller)
+}
+
+/// Makes the pane ids a request names its caller's: a CLI that claims another pane is refused.
+fn bind(mut request: Request, pane: PaneId) -> Result<Request> {
+    fn claim(slot: &mut Option<PaneId>, pane: PaneId) -> Result<()> {
+        match slot {
+            Some(named) if *named != pane => Err(format!(
+                "SOLACE_PANE_ID ({}) does not match this pane",
+                named.0
+            )),
+            _ => {
+                *slot = Some(pane);
+                Ok(())
+            }
+        }
+    }
+    match &mut request {
+        Request::AgentStart { from, .. }
+        | Request::TasksStart { from, .. }
+        | Request::TasksWait { from, .. }
+        | Request::TasksClean { from, .. } => claim(from, pane)?,
+        Request::TaskDone { pane: named, .. } | Request::UsageReport { pane: named, .. } => {
+            claim(named, pane)?
+        }
+        Request::AgentReport { pane: named, .. } if *named != pane => {
+            return Err(format!(
+                "SOLACE_PANE_ID ({}) does not match this pane",
+                named.0
+            ));
+        }
+        _ => {}
+    }
+    Ok(request)
+}
+
+/// A task's worker may report and look, nothing more: it must not drive the user's panes or
+/// start agents. `task.done` is only for its own task.
+fn authorize(request: &Request, caller: &Caller) -> Result<()> {
+    let Some(own) = &caller.task else {
+        return Ok(());
+    };
+    match request {
+        Request::TaskDone { task, .. } if task != own => {
+            Err(format!("you may only finish your own task ({own})"))
+        }
+        Request::TaskDone { .. }
+        | Request::AgentReport { .. }
+        | Request::UsageReport { .. }
+        | Request::PaneList
+        | Request::AgentList
+        | Request::TasksWait { .. } => Ok(()),
+        _ => {
+            Err("a task's worker may only report its task and list panes, agents and tasks".into())
+        }
+    }
+}
+
+/// Typing goes to agents, or to panes the caller opened; never into the user's own shells.
+fn may_type(target_has_agent: bool, target_creator: Option<PaneId>, caller: PaneId) -> bool {
+    target_has_agent || target_creator == Some(caller)
+}
+
+fn check_typing(app: &AppHandle, target: PaneId, caller: &Caller) -> Result<()> {
+    let allowed = with_state(app, |s| {
+        may_type(
+            agent_in(s, target).is_some(),
+            s.creators.get(&target).copied(),
+            caller.pane,
+        )
+    });
+    if allowed {
+        Ok(())
+    } else {
+        Err(
+            "that pane runs no agent and was not opened by you; only the user may type there"
+                .into(),
+        )
+    }
+}
+
+/// Remembers who opened `reply["pane"]`, so that caller may type into it later.
+fn opened_by(app: &AppHandle, caller: &Caller, reply: Value) -> Value {
+    if let Some(pane) = reply.get("pane").and_then(Value::as_u64) {
+        with_state(app, |s| s.creators.insert(PaneId(pane as u32), caller.pane));
+    }
+    reply
+}
+
+fn dispatch(app: &AppHandle, request: Request, caller: &Caller) -> Response {
     match request {
         Request::PaneList => Ok(with_state(app, pane_list)),
-        Request::PaneSplit { pane, direction } => {
-            split(app, pane, direction, None, None, &[]).map(|pane| json!({ "pane": pane }))
-        }
+        Request::PaneSplit { pane, direction } => split(app, pane, direction, None, None, &[])
+            .map(|pane| opened_by(app, caller, json!({ "pane": pane }))),
         Request::PaneSend {
             target,
             text,
             enter,
         } => {
             let pane = resolve(app, &target)?;
+            check_typing(app, pane, caller)?;
             type_text(app, pane, &text, enter, false)?;
             Ok(json!({ "pane": pane }))
         }
@@ -53,19 +159,24 @@ pub fn handle(app: &AppHandle, request: Request) -> Response {
             from,
             direction,
             prompt,
-        } => start_agent(app, name, &kind, from, direction, prompt),
+        } => start_agent(app, name, &kind, from, direction, prompt)
+            .map(|reply| opened_by(app, caller, reply)),
         Request::AgentPrompt {
             target,
             text,
             wait,
             timeout_secs,
-        } => send_prompt(
-            app,
-            &target,
-            &text,
-            wait,
-            Duration::from_secs(timeout_secs).min(MAX_WAIT),
-        ),
+        } => {
+            let pane = resolve(app, &target)?;
+            check_typing(app, pane, caller)?;
+            send_prompt(
+                app,
+                &target,
+                &text,
+                wait,
+                Duration::from_secs(timeout_secs).min(MAX_WAIT),
+            )
+        }
         Request::AgentWait {
             target,
             timeout_secs,
@@ -221,6 +332,8 @@ pub(crate) fn close(app: &AppHandle, pane: PaneId) {
                 pty.kill();
             }
             s.names.remove(&pane);
+            s.creators.remove(&pane);
+            s.callers.retain(|_, c| c.pane != pane);
             commit(app, s);
         }
     });
@@ -472,6 +585,64 @@ fn pane_list(s: &mut AppState) -> Value {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn worker(task: &str) -> Caller {
+        Caller {
+            pane: PaneId(2),
+            task: Some(task.into()),
+        }
+    }
+
+    fn done(task: &str) -> Request {
+        Request::TaskDone {
+            task: task.into(),
+            pane: None,
+            summary: String::new(),
+            failed: false,
+            no_changes: false,
+        }
+    }
+
+    #[test]
+    fn workers_may_only_report_and_look() {
+        let lead = Caller {
+            pane: PaneId(1),
+            task: None,
+        };
+        let send = || Request::PaneSend {
+            target: "1".into(),
+            text: "x".into(),
+            enter: true,
+        };
+        assert!(authorize(&send(), &lead).is_ok());
+        assert!(authorize(&send(), &worker("b1-1")).is_err());
+        assert!(authorize(&Request::PaneList, &worker("b1-1")).is_ok());
+        assert!(authorize(&done("b1-1"), &worker("b1-1")).is_ok());
+        assert!(authorize(&done("b1-2"), &worker("b1-1")).is_err());
+    }
+
+    #[test]
+    fn requests_are_bound_to_the_token_pane() {
+        let list = |from| Request::TasksWait {
+            batch: None,
+            from,
+            timeout_secs: 0,
+        };
+        let Ok(Request::TasksWait { from, .. }) = bind(list(None), PaneId(4)) else {
+            panic!("refused");
+        };
+        assert_eq!(from, Some(PaneId(4)));
+        assert!(bind(list(Some(PaneId(5))), PaneId(4)).is_err());
+    }
+
+    #[test]
+    fn typing_needs_an_agent_or_being_the_creator() {
+        let me = PaneId(1);
+        assert!(may_type(true, None, me));
+        assert!(may_type(false, Some(me), me));
+        assert!(!may_type(false, None, me));
+        assert!(!may_type(false, Some(PaneId(9)), me));
+    }
 
     #[test]
     fn prompts_cannot_smuggle_keystrokes() {

@@ -3,7 +3,7 @@ use std::thread;
 
 use interprocess::local_socket::traits::ListenerExt as _;
 use interprocess::local_socket::{ListenerOptions, Stream};
-use solace_core::orchestration::{Request, Response};
+use solace_core::orchestration::{Envelope, Response};
 
 /// Requests are small JSON lines; anything bigger is not from the CLI.
 const MAX_REQUEST: u64 = 1024 * 1024;
@@ -37,7 +37,7 @@ pub fn endpoint(nonce: u64) -> String {
 /// other callers.
 pub fn serve(
     name: &str,
-    handle: impl Fn(Request) -> Response + Send + Sync + Clone + 'static,
+    handle: impl Fn(Envelope) -> Response + Send + Sync + Clone + 'static,
 ) -> io::Result<()> {
     #[cfg(windows)]
     let options = {
@@ -89,11 +89,11 @@ fn private_folder(socket: &std::path::Path) -> io::Result<()> {
     Ok(())
 }
 
-fn respond(stream: Stream, handle: impl Fn(Request) -> Response) -> io::Result<()> {
+fn respond(stream: Stream, handle: impl Fn(Envelope) -> Response) -> io::Result<()> {
     let mut reader = BufReader::new(&stream);
     let mut line = String::new();
     reader.by_ref().take(MAX_REQUEST).read_line(&mut line)?;
-    let response = match serde_json::from_str::<Request>(&line) {
+    let response = match serde_json::from_str::<Envelope>(&line) {
         Ok(request) => handle(request),
         Err(err) => Err(format!("invalid request: {err}")),
     };

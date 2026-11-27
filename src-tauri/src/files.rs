@@ -77,8 +77,10 @@ pub async fn files_list(
     space: SpaceId,
     path: String,
 ) -> Result<Vec<Entry>> {
-    let dir = inside(&root_of(&state, space)?, &path)?;
-    blocking(move || files::list(&dir).map_err(|e| e.to_string())).await
+    let root = root_of(&state, space)?;
+    let dir = inside(&root, &path)?;
+    // A link inside the space must not list what lies outside it.
+    blocking(move || files::list(&contained(&root, &dir)?).map_err(|e| e.to_string())).await
 }
 
 /// `None` when the space is not a git repository.
@@ -145,7 +147,17 @@ pub fn file_open(
     space: SpaceId,
     path: String,
 ) -> Result<()> {
-    let target = inside(&root_of(&state, space)?, &path)?;
+    let root = root_of(&state, space)?;
+    // The resolved target: a link in the space must not open (or run) what lies outside it.
+    let target = contained(&root, &inside(&root, &path)?)?;
+    if !target.is_file() {
+        return Err(format!("{path} is not a file"));
+    }
+    // The opener wants a plain path, not the `\\?\` form canonicalize gives on Windows.
+    let target = match target.to_string_lossy().strip_prefix(r"\\?\") {
+        Some(plain) if plain.as_bytes().get(1) == Some(&b':') => PathBuf::from(plain),
+        _ => target,
+    };
     let openable = target
         .extension()
         .and_then(|e| e.to_str())

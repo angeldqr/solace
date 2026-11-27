@@ -1,66 +1,83 @@
-# Solace
+<p align="center">
+  <img src="public/solace.svg" alt="Solace" width="96" height="96">
+</p>
 
-A desktop terminal for running and orchestrating AI coding agents: Claude Code, Codex, Antigravity, Kimi, or any CLI agent. Agents can start other agents and hand them work, all inside one workspace.
+<h1 align="center">Solace</h1>
 
-> Status: early development (v0.0.x). Not ready for daily use yet.
+<p align="center">
+  A desktop terminal to run and orchestrate AI coding agents.<br>
+  Windows, macOS (Apple Silicon) and Linux.
+</p>
 
-Runs on Windows 10/11, macOS 11+ (Apple Silicon) and Linux (x86_64). Windows is where it is used and tested most.
+![Solace with a terminal and the Changes panel showing a diff](docs/screenshot.png)
+
+Solace groups your terminals by project, knows what each agent is doing, and lets one agent hand work to others in parallel, each in its own git branch.
+
+Works with Claude Code, Codex, Antigravity CLI, OpenCode, Qwen Code, Kimi Code, Copilot, Cursor Agent and Amp.
 
 ## Features
 
-- **Terminals** with tabs and resizable splits, grouped into spaces (one per project folder). Pick PowerShell, cmd, Git Bash or WSL as the shell. Resize splits with the mouse or **Alt+Shift+arrows**; a shell that fails stays on screen and **Enter** starts a new one.
-- **Agent awareness**: Claude Code, Codex, Antigravity CLI, Qwen Code, Kimi Code, OpenCode, Copilot, Cursor Agent and Amp are recognized in any pane, also inside WSL, with their state (working, needs you, done, idle). For Claude Code, turn on **Settings > Agents > Claude Code integration** and its hooks report the exact state instead of Solace reading the screen.
-- **Orchestration**: inside Solace, the `solace` CLI lets an agent open panes, start other agents, prompt them and read their answers (`solace agent start reviewer --kind codex`, `solace agent prompt reviewer "..." --wait`). Run `solace skill install` to teach Claude Code how.
-- **Files and Changes** panels with a lazy file tree, git status and diffs, refreshed live.
-- **Themes**: five built-in themes (one light), VS Code theme import, terminal font and cursor settings, English and Spanish.
-- **Updates** download in the background and apply when you choose to restart.
+- **Spaces, tabs and splits**: one space per project folder, with tabs and resizable split panes (mouse or **Alt+Shift+arrows**). Pick PowerShell, cmd, Git Bash or WSL as the shell.
+- **Agent awareness**: every agent in any pane (also inside WSL) shows its state: working, needs you, or done. You get a notification when one needs you or finishes.
+- **Any CLI in one click**: the **+** menu opens a tab with any agent CLI installed on your machine.
+- **Solace Tasks**: a lead agent runs `solace tasks start` and fans N tasks out to N agents in parallel. Each works in its own git worktree and branch. A review round then has agents review each other's branches. Nothing is merged until you say so.
+- **`solace` CLI**: agents open panes, start other agents, prompt them and read their screens. `solace skill install` teaches Claude Code how.
+- **Usage meter**: Claude 5-hour and weekly limits (read from the Claude Code status line), Codex limits and token counts, plus a context ring per agent.
+- **Files panel**: lazy file tree with an in-app viewer for Markdown, code and images.
+- **Changes panel**: git status with syntax-highlighted diffs and before/after for images.
+- **Personalization**: light and dark themes, accent color, fonts, custom CSS and a theme editor.
+- **Discord Rich Presence**: shows which agent you are using, never folders or file names. Optional.
+- **Auto-updates**: downloaded in the background, applied when you restart.
 
-## Stack
+## Install
 
-- **Core:** Rust. PTYs, agent detection and orchestration.
-- **Shell:** [Tauri 2](https://tauri.app), so the native window ships as a ~2 MB installer.
-- **UI:** React 19, Tailwind CSS v4, Lucide icons, Inter.
+Download the installer for your system from [GitHub Releases](https://github.com/angeldqr/solace/releases):
 
-## Layout
+| System                    | File                  |
+| ------------------------- | --------------------- |
+| Windows 10/11             | `.exe` or `.msi`      |
+| macOS 11+ (Apple Silicon) | `.dmg`                |
+| Linux (x86_64)            | `.AppImage` or `.deb` |
 
+> [!NOTE]
+> The macOS app is not notarized (only ad-hoc signed), so macOS blocks it the first time. Right-click it and choose **Open**, or run `xattr -dr com.apple.quarantine /Applications/Solace.app`.
+
+> [!NOTE]
+> On Linux only the AppImage updates itself; install a new `.deb` by hand. Windows releases are unsigned until SignPath approval ([details](docs/code-signing.md)).
+
+## Solace Tasks
+
+Inside a Solace terminal, ask your agent to split work, or run it yourself:
+
+```sh
+solace tasks start <<'EOF'
+[
+  {"title": "Fix login redirect", "prompt": "In src/auth/login.ts the redirect ignores ?next=. Fix it and add a test."},
+  {"title": "Dark mode contrast", "prompt": "Sidebar text fails WCAG AA. Adjust the tokens in src/theme.css.", "kind": "codex"}
+]
+EOF
+solace tasks wait
 ```
-crates/solace-core   Domain and use cases. Pure Rust, no IO.
-src-tauri            Desktop app (composition root, Tauri commands)
-src                  React UI, organised by feature
-```
 
-## Development
+Each task gets a pane, a worktree under `.solace/` and a branch. The full agent guide is in [skills/solace/SKILL.md](skills/solace/SKILL.md).
 
-Requirements: Rust (stable, MSVC on Windows), Node 24+, pnpm 10, and the [Tauri prerequisites](https://tauri.app/start/prerequisites/) (on Linux, `libwebkit2gtk-4.1-dev` and friends).
+## Build from source
+
+Requirements: Rust (stable, pinned in `rust-toolchain.toml`; MSVC on Windows), Node 24+, pnpm 10 and the [Tauri prerequisites](https://tauri.app/start/prerequisites/).
 
 ```sh
 pnpm install
 pnpm tauri dev      # run the app
+pnpm tauri build    # build installers
+pnpm test           # frontend tests
 cargo test --workspace
 pnpm lint
 ```
 
-## Releases
-
-Pushing a `vX.Y.Z` tag that matches `version` in `Cargo.toml` builds the installers (Windows `.exe` and `.msi`, macOS `.dmg`, Linux `.AppImage` and `.deb`) and signed update bundles, and attaches them to a draft GitHub release. Running the Release workflow by hand builds everything without releasing. Publishing the draft makes installed copies download the update and offer a restart.
-
-Signing needs the repository secrets `TAURI_SIGNING_PRIVATE_KEY` and `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`. The public key lives in `src-tauri/tauri.conf.json`; losing the private key means installed copies can no longer update.
-
-## Code signing policy
-
-The macOS app is not notarized (only ad-hoc signed), so macOS blocks it the first time: right-click it and choose **Open**, or run `xattr -dr com.apple.quarantine /Applications/Solace.app`. On Linux, only the AppImage updates itself; the `.deb` is updated by installing the new one.
-
-Free code signing provided by [SignPath.io](https://about.signpath.io), certificate by [SignPath Foundation](https://signpath.org) (pending approval; until then releases are unsigned).
-
-- Committers and reviewers: [maintainers of this repository](https://github.com/angeldqr/solace/graphs/contributors)
-- Approvers: [repository owner](https://github.com/angeldqr)
-
-Setup details: [docs/code-signing.md](docs/code-signing.md).
+The code is split into `crates/solace-core` (domain), `crates/solace-infra`, `crates/solace-cli` (the `solace` command), `src-tauri` (desktop shell) and `src` (React UI).
 
 ## Privacy
 
-Solace does not collect or send any usage data. The only network requests it makes on its own are to GitHub Releases, to check for and download updates. You can turn this off in **Settings > About**. Agents and programs you run in its terminals follow their own privacy policies.
+Solace has no telemetry. Its only own network requests are update checks and downloads from GitHub Releases (can be turned off in **Settings > About**). Discord Rich Presence talks to Discord only while Discord is open. Agents you run follow their own privacy policies.
 
-## License
-
-[Apache-2.0](LICENSE). See [NOTICE](NOTICE) for attributions.
+Licensed under [Apache-2.0](LICENSE).

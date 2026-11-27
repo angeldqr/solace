@@ -3,9 +3,10 @@ use std::path::PathBuf;
 use std::process::ExitCode;
 
 use clap::{Parser, Subcommand};
+#[cfg(unix)]
 use interprocess::local_socket::{Stream, prelude::*};
 use solace_core::agents::hooks::{HookVerdict, claude_hook};
-use solace_core::orchestration::{Request, Response};
+use solace_core::orchestration::{Envelope, Request, Response};
 use solace_core::tasks::TaskSpec;
 use solace_core::terminals::{Direction, PaneId};
 
@@ -315,34 +316,45 @@ fn request(command: Command) -> Result<Request, String> {
     })
 }
 
-fn call(request: &Request) -> Result<serde_json::Value, String> {
+fn call(request: Request) -> Result<serde_json::Value, String> {
     // Each Solace launch picks a new pipe name and hands it to its shells.
     let name = std::env::var("SOLACE_PIPE")
         .ok()
         .filter(|name| !name.is_empty())
         .ok_or("not inside a Solace terminal (SOLACE_PIPE is not set)")?;
-    // A pipe name on Windows, a socket path on Unix (see solace_infra::ipc::endpoint).
-    #[cfg(windows)]
-    let name = {
-        use interprocess::local_socket::{GenericNamespaced, ToNsName};
-        name.as_str().to_ns_name::<GenericNamespaced>()
-    };
-    #[cfg(unix)]
-    let name = {
-        use interprocess::local_socket::{GenericFilePath, ToFsName};
-        name.as_str().to_fs_name::<GenericFilePath>()
-    };
-    let name = name.map_err(|e| e.to_string())?;
-    let stream = Stream::connect(name)
-        .map_err(|err| format!("could not reach Solace ({err}); is the app still running?"))?;
-    let mut line = serde_json::to_vec(request).map_err(|e| e.to_string())?;
+    let token = std::env::var("SOLACE_PANE_TOKEN").unwrap_or_default();
+    let mut line = serde_json::to_vec(&Envelope { token, request }).map_err(|e| e.to_string())?;
     line.push(b'\n');
-    (&stream).write_all(&line).map_err(|e| e.to_string())?;
-    let mut reply = String::new();
-    BufReader::new(&stream)
-        .read_line(&mut reply)
-        .map_err(|e| e.to_string())?;
+    let reply = exchange(&name, &line)
+        .map_err(|err| format!("could not reach Solace ({err}); is the app still running?"))?;
     serde_json::from_str::<Response>(&reply).map_err(|e| format!("bad reply from Solace: {e}"))?
+}
+
+/// Sends one line and reads the reply line. A pipe name on Windows, a socket path on Unix (see
+/// solace_infra::ipc::endpoint).
+#[cfg(windows)]
+fn exchange(name: &str, line: &[u8]) -> std::io::Result<String> {
+    use std::os::windows::fs::OpenOptionsExt;
+    // SECURITY_SQOS_PRESENT | SECURITY_IDENTIFICATION: a pipe server can't impersonate us.
+    let pipe = std::fs::OpenOptions::new()
+        .read(true)
+        .write(true)
+        .security_qos_flags(0x0010_0000 | 0x0001_0000)
+        .open(format!(r"\\.\pipe\{name}"))?;
+    (&pipe).write_all(line)?;
+    let mut reply = String::new();
+    BufReader::new(&pipe).read_line(&mut reply)?;
+    Ok(reply)
+}
+
+#[cfg(unix)]
+fn exchange(name: &str, line: &[u8]) -> std::io::Result<String> {
+    use interprocess::local_socket::{GenericFilePath, ToFsName};
+    let stream = Stream::connect(name.to_fs_name::<GenericFilePath>()?)?;
+    (&stream).write_all(line)?;
+    let mut reply = String::new();
+    BufReader::new(&stream).read_line(&mut reply)?;
+    Ok(reply)
 }
 
 fn install_skill() -> Result<serde_json::Value, String> {
@@ -386,7 +398,7 @@ fn hook() -> ExitCode {
         .and_then(serde_json::Value::as_str)
         .unwrap_or_default()
         .to_string();
-    let _ = call(&Request::AgentReport {
+    let _ = call(Request::AgentReport {
         pane,
         session,
         state,
@@ -406,7 +418,7 @@ fn statusline(tee: bool) -> ExitCode {
     if let Ok(status) = serde_json::from_slice::<serde_json::Value>(&input) {
         let (sender, done) = std::sync::mpsc::channel();
         std::thread::spawn(move || {
-            let _ = call(&Request::UsageReport {
+            let _ = call(Request::UsageReport {
                 pane: caller_pane(),
                 status,
             });
@@ -452,7 +464,7 @@ fn main() -> ExitCode {
         Command::Skill { action: Some(a) } => {
             Err(format!("unknown skill action {a:?}; try install"))
         }
-        command => request(command).and_then(|r| call(&r)),
+        command => request(command).and_then(call),
     };
     match result {
         Ok(value) => {
