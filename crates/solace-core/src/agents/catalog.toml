@@ -68,11 +68,12 @@ region = "title"
 regex = '\S'
 
 [[agent]]
-id = "gemini"
-name = "Gemini CLI"
-executables = ["gemini"]
-packages = ["@google/gemini-cli"]
+id = "antigravity"
+name = "Antigravity CLI"
+executables = ["agy"]
+packages = []
 
+# TODO: these rules are carried over from Gemini CLI; check them against the real Antigravity UI.
 [[agent.rule]]
 state = "blocked"
 region = "bottom:30"

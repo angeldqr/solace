@@ -11,6 +11,31 @@ import { useOnDisk } from "./useOnDisk";
 
 const PatchViewer = lazy(() => import("./PatchViewer"));
 
+const IMAGE = /\.(png|jpe?g|gif|webp|bmp|ico|svg)$/i;
+
+/** Both sides of an image change as data URLs; null where the file didn't exist. */
+async function loadImages(space: SpaceId, change: Change) {
+  const { status, path, from } = change;
+  const [before, after] = await Promise.all([
+    status === "A" || status === "U" ? null : api.gitShowImage(space, from ?? path),
+    status === "D" ? null : api.fileRead(space, path),
+  ]);
+  return { before, after: after?.kind === "image" ? after.dataUrl : null };
+}
+
+function ImageSide({ label, src }: { label: string; src: string | null }) {
+  return (
+    <div className="flex min-h-0 min-w-0 flex-1 flex-col items-center gap-2 p-3">
+      <span className="text-fg-subtle text-xs">{label}</span>
+      {src && (
+        <div className="grid min-h-0 w-full flex-1 place-items-center rounded-lg bg-surface p-2">
+          <img src={src} alt={label} className="max-h-full max-w-full object-contain" />
+        </div>
+      )}
+    </div>
+  );
+}
+
 /** Longer patches ask before rendering: highlighting thousands of lines freezes the panel. */
 const MAX_DIFF_LINES = 4000;
 
@@ -24,9 +49,17 @@ export function DiffView({
   onBack: () => void;
 }) {
   const ignoreWs = useSettings((s) => s.diffIgnoreWhitespace);
+  const isImage = IMAGE.test(change.path);
   const { data, error } = useOnDisk(
-    () => api.gitDiff(space, change.path, change.from, change.status === "U", ignoreWs),
+    () =>
+      isImage
+        ? Promise.resolve("")
+        : api.gitDiff(space, change.path, change.from, change.status === "U", ignoreWs),
     `${space}:${change.status}:${change.path}:${ignoreWs}`,
+  );
+  const images = useOnDisk(
+    () => (isImage ? loadImages(space, change) : Promise.resolve(null)),
+    `img:${space}:${change.status}:${change.path}`,
   );
   const split = useSettings((s) => s.diffLayout) === "split";
   const [forced, setForced] = useState(false);
@@ -77,7 +110,14 @@ export function DiffView({
           ))}
         </div>
       </div>
-      {error !== undefined ? (
+      {isImage ? (
+        images.data && (
+          <div className="flex min-h-0 flex-1">
+            <ImageSide label={t("diffBefore")} src={images.data.before} />
+            <ImageSide label={t("diffAfter")} src={images.data.after} />
+          </div>
+        )
+      ) : error !== undefined ? (
         <p className="px-3 py-3 text-body text-fg-subtle">{error}</p>
       ) : data === undefined ? null : !data.trim() ? (
         <p className="px-3 py-3 text-body text-fg-subtle">

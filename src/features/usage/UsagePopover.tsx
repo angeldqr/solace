@@ -1,16 +1,10 @@
 import { useEffect, useState } from "react";
 import { t } from "../../shared/i18n";
 import { api, type Limit, type ProviderUsage, type Tokens, type UsageView } from "../../shared/ipc";
+import { panesOf, useSession } from "../../shared/session";
 import { AgentIcon } from "../../shared/ui/AgentIcon";
 import { useNow } from "../../shared/useNow";
-import { duration, isStale, tone } from "./usage";
-
-function compact(n: number) {
-  if (n >= 1e9) return `${(n / 1e9).toFixed(1)}B`;
-  if (n >= 1e6) return `${(n / 1e6).toFixed(1)}M`;
-  if (n >= 1e3) return `${Math.round(n / 1e3)}k`;
-  return String(n);
-}
+import { compact, duration, isStale, tone } from "./usage";
 
 /** What the user spent; cache traffic is shown apart. */
 const spent = (x: Tokens) => x.input + x.output;
@@ -135,7 +129,14 @@ function Stat({ label, tokens }: { label: string; tokens: Tokens }) {
   );
 }
 
-export function UsagePopover({ view }: { view: UsageView | null }) {
+export function UsagePopover({
+  view,
+  onFocusPane,
+}: {
+  view: UsageView | null;
+  onFocusPane?: () => void;
+}) {
+  const spaces = useSession((s) => s.view);
   const now = useNow(30_000);
   const [integration, setIntegration] = useState(true);
   useEffect(() => {
@@ -178,21 +179,41 @@ export function UsagePopover({ view }: { view: UsageView | null }) {
       {view && view.sessions.length > 0 && (
         <section className="flex flex-col gap-2 border-line border-t pt-3">
           <h3 className="text-2xs text-fg-subtle">{t("usageSessions")}</h3>
-          {view.sessions.map((s) => (
-            <div key={s.pane} className="flex items-center gap-2">
-              <span className="min-w-0 flex-1 truncate text-fg">{s.model ?? "Claude"}</span>
-              {s.contextUsedPercent !== null && (
-                <span className="w-16" title={t("usageContext")}>
-                  <Bar percent={s.contextUsedPercent} />
+          {view.sessions.map((s) => {
+            const space = spaces?.spaces.find((sp) =>
+              sp.tabs.some((tab) => panesOf(tab.layout).includes(s.pane)),
+            )?.name;
+            return (
+              <button
+                key={s.pane}
+                type="button"
+                onClick={() => {
+                  void api.paneFocus(s.pane);
+                  onFocusPane?.();
+                }}
+                className="flex flex-col gap-1 rounded-md py-1 text-left hover:bg-hover"
+              >
+                <span className="flex items-center gap-2">
+                  <AgentIcon agent={s.agent} className="size-4 shrink-0" />
+                  <span className="min-w-0 flex-1 truncate text-fg">{s.model ?? s.agent}</span>
+                  {space && <span className="truncate text-2xs text-fg-subtle">{space}</span>}
+                  {s.costUsd !== null && (
+                    <span className="text-fg-muted tabular-nums">${s.costUsd.toFixed(2)}</span>
+                  )}
                 </span>
-              )}
-              {s.costUsd !== null && (
-                <span className="w-12 text-right text-fg-muted tabular-nums">
-                  ${s.costUsd.toFixed(2)}
-                </span>
-              )}
-            </div>
-          ))}
+                {s.percent !== null && s.usedTokens !== null && s.limit !== null && (
+                  <span className="flex items-center gap-2" title={t("usageContext")}>
+                    <span className="flex-1">
+                      <Bar percent={s.percent} />
+                    </span>
+                    <span className="text-2xs text-fg-subtle tabular-nums">
+                      {Math.round(s.percent)}% · {compact(s.usedTokens)} / {compact(s.limit)}
+                    </span>
+                  </span>
+                )}
+              </button>
+            );
+          })}
         </section>
       )}
     </div>

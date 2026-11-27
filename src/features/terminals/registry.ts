@@ -3,6 +3,7 @@ import { FitAddon } from "@xterm/addon-fit";
 import { Unicode11Addon } from "@xterm/addon-unicode11";
 import { WebglAddon } from "@xterm/addon-webgl";
 import { Terminal } from "@xterm/xterm";
+import { useAgents } from "../../shared/agents";
 import { api, type PaneId } from "../../shared/ipc";
 import { panesOf, setTitle, useSession } from "../../shared/session";
 import { activeTheme, terminalFontFamily, useSettings, useSystemDark } from "../settings/settings";
@@ -77,6 +78,18 @@ function create(pane: PaneId): Entry {
   term.attachCustomKeyEventHandler((event) => {
     if (event.type !== "keydown") return true;
     if (interceptKey(event)) return false;
+    // Agent CLIs read a bare Enter as submit; Shift+Enter inserts a newline instead.
+    if (
+      event.key === "Enter" &&
+      event.shiftKey &&
+      !event.ctrlKey &&
+      !event.altKey &&
+      !event.metaKey &&
+      useAgents.getState().list.some((a) => a.pane === pane)
+    ) {
+      void api.ptyWrite(pane, "\n");
+      return false;
+    }
     const key = event.key.toLowerCase();
     if (event.ctrlKey && key === "c" && term.hasSelection()) {
       void navigator.clipboard.writeText(term.getSelection());
@@ -90,6 +103,15 @@ function create(pane: PaneId): Entry {
 
   const el = document.createElement("div");
   el.className = "h-full w-full";
+  // Right click copies the selection, or pastes when nothing is selected.
+  el.addEventListener("contextmenu", () => {
+    if (term.hasSelection()) {
+      void navigator.clipboard.writeText(term.getSelection());
+      term.clearSelection();
+    } else {
+      void navigator.clipboard.readText().then((text) => term.paste(text));
+    }
+  });
   return { term, fit, el, opened: false, attached: false };
 }
 

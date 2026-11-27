@@ -9,12 +9,16 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use serde::Serialize;
 use serde_json::Value;
 use solace_core::terminals::PaneId;
-use solace_core::usage::{ClaudeSession, Limit, ProviderUsage, Tokens, parse_claude_status};
-use solace_infra::usage::{ClaudeLog, CodexCache};
+use solace_core::usage::{
+    ClaudeSession, ContextUse, Limit, ProviderUsage, Tokens, parse_claude_status,
+};
+use solace_infra::usage::{ClaudeLog, CodexCache, CodexContext, OpencodeContext};
 use tauri::{AppHandle, Emitter, Manager, State};
 
 use crate::{AppState, Shared};
 
+/// Context of Codex and OpenCode panes is polled this often; the heavier reads every `EVERY`.
+const TICK: Duration = Duration::from_secs(5);
 const EVERY: Duration = Duration::from_secs(30);
 const FIVE_HOURS: u64 = 5 * 3600;
 
@@ -23,6 +27,8 @@ pub struct UsageState {
     claude: Option<ProviderUsage>,
     codex: Option<ProviderUsage>,
     sessions: HashMap<PaneId, ClaudeSession>,
+    /// Context of the Codex and OpenCode panes: (agent id, context).
+    contexts: HashMap<PaneId, (String, ContextUse)>,
     tokens: TokensView,
 }
 
@@ -44,8 +50,32 @@ struct Hour {
 #[serde(rename_all = "camelCase")]
 struct SessionUsage {
     pane: PaneId,
-    #[serde(flatten)]
-    session: ClaudeSession,
+    agent: String,
+    model: Option<String>,
+    used_tokens: Option<u64>,
+    limit: Option<u64>,
+    percent: Option<f64>,
+    cost_usd: Option<f64>,
+}
+
+impl SessionUsage {
+    fn new(
+        pane: PaneId,
+        agent: &str,
+        model: Option<String>,
+        cost: Option<f64>,
+        c: Option<&ContextUse>,
+    ) -> Self {
+        SessionUsage {
+            pane,
+            agent: agent.to_string(),
+            model: model.or_else(|| c?.model.clone()),
+            used_tokens: c.map(|c| c.used),
+            limit: c.and_then(|c| c.limit),
+            percent: c.and_then(ContextUse::percent),
+            cost_usd: cost,
+        }
+    }
 }
 
 #[derive(Clone, PartialEq, Serialize)]
@@ -72,15 +102,18 @@ fn home_dir(var: &str, default: &str) -> Option<PathBuf> {
 
 /// Panes of closed terminals drop out here, so a finished session never lingers.
 pub fn view(state: &AppState) -> UsageView {
-    let mut sessions: Vec<SessionUsage> = state
+    let claude = state.usage.sessions.iter().map(|(pane, s)| {
+        let (model, cost) = (s.model.clone(), s.cost_usd);
+        SessionUsage::new(*pane, "claude", model, cost, s.context.as_ref())
+    });
+    let others = state
         .usage
-        .sessions
+        .contexts
         .iter()
-        .filter(|(pane, _)| state.ptys.contains_key(pane))
-        .map(|(pane, session)| SessionUsage {
-            pane: *pane,
-            session: session.clone(),
-        })
+        .map(|(pane, (agent, c))| SessionUsage::new(*pane, agent, None, None, Some(c)));
+    let mut sessions: Vec<SessionUsage> = claude
+        .chain(others)
+        .filter(|s| state.ptys.contains_key(&s.pane))
         .collect();
     sessions.sort_by_key(|s| s.pane.0);
     UsageView {
@@ -155,54 +188,97 @@ pub fn report(app: &AppHandle, pane: Option<PaneId>, status: &Value) {
     }
 }
 
+/// Codex and OpenCode panes, with the folder each works in.
+fn context_panes(app: &AppHandle) -> Vec<(PaneId, &'static str, PathBuf)> {
+    let state = app.state::<Shared>();
+    let state = state.lock().unwrap();
+    state
+        .agents
+        .keys()
+        .filter_map(|&pane| {
+            let (agent, _) = crate::agents::agent_in(&state, pane)?;
+            let root = state.session.pane_root(pane)?.to_path_buf();
+            matches!(agent, "codex" | "opencode").then_some((pane, agent, root))
+        })
+        .collect()
+}
+
 pub fn watch(app: AppHandle) {
     let mut log = ClaudeLog::default();
     let mut codex = CodexCache::default();
+    let (mut codex_ctx, mut opencode_ctx) = (CodexContext::default(), OpencodeContext::default());
     let codex_home = home_dir("CODEX_HOME", ".codex");
     let projects = home_dir("CLAUDE_CONFIG_DIR", ".claude").map(|d| d.join("projects"));
+    let opencode_db = std::env::var_os("OPENCODE_DB")
+        .map(PathBuf::from)
+        .or_else(|| Some(home_dir("USERPROFILE", "")?.join(".local/share/opencode/opencode.db")));
+    let opencode_models =
+        home_dir("USERPROFILE", "").map(|h| h.join(".cache/opencode/models.json"));
+    let mut heavy: Option<std::time::Instant> = None;
+    let mut codex_usage = None;
+    let mut tokens = None;
     loop {
         // File reads happen outside the state lock.
         let now = now_secs();
-        let codex_usage = codex_home.as_deref().and_then(|h| codex.read(h));
-        if let Some(p) = &projects {
-            log.scan(p, now);
+        if heavy.is_none_or(|t| t.elapsed() >= EVERY) {
+            heavy = Some(std::time::Instant::now());
+            codex_usage = codex_home.as_deref().and_then(|h| codex.read(h));
+            if let Some(p) = &projects {
+                log.scan(p, now);
+            }
+            let reset = app
+                .state::<Shared>()
+                .lock()
+                .unwrap()
+                .usage
+                .claude
+                .as_ref()
+                .and_then(|u| u.limits.iter().find(|l| l.window_minutes == 300)?.resets_at);
+            // The 5-hour block ends at the reset; if unknown, approximate with the last 5 hours.
+            let block_start = reset
+                .filter(|r| *r > now)
+                .map_or(now.saturating_sub(FIVE_HOURS), |r| r - FIVE_HOURS);
+            tokens = Some(TokensView {
+                block_start,
+                block: log.totals_since(block_start),
+                hourly: log
+                    .hourly(now)
+                    .into_iter()
+                    .map(|(hour, tokens)| Hour { hour, tokens })
+                    .collect(),
+            });
         }
-        let reset = app
-            .state::<Shared>()
-            .lock()
-            .unwrap()
-            .usage
-            .claude
-            .as_ref()
-            .and_then(|u| u.limits.iter().find(|l| l.window_minutes == 300)?.resets_at);
-        // The 5-hour block ends at the reset; if unknown, approximate with the last 5 hours.
-        let block_start = reset
-            .filter(|r| *r > now)
-            .map_or(now.saturating_sub(FIVE_HOURS), |r| r - FIVE_HOURS);
-        let tokens = TokensView {
-            block_start,
-            block: log.totals_since(block_start),
-            hourly: log
-                .hourly(now)
-                .into_iter()
-                .map(|(hour, tokens)| Hour { hour, tokens })
-                .collect(),
-        };
+        let contexts: HashMap<PaneId, (String, ContextUse)> = context_panes(&app)
+            .into_iter()
+            .filter_map(|(pane, agent, root)| {
+                let ctx = match agent {
+                    "codex" => codex_home.as_deref().and_then(|h| codex_ctx.read(h, &root)),
+                    _ => opencode_db
+                        .as_deref()
+                        .zip(opencode_models.as_deref())
+                        .and_then(|(db, models)| opencode_ctx.read(db, models, &root)),
+                }?;
+                Some((pane, (agent.to_string(), ctx)))
+            })
+            .collect();
         {
             let state = app.state::<Shared>();
             let mut state = state.lock().unwrap();
             let live: Vec<PaneId> = state.ptys.keys().copied().collect();
             let before = view(&state);
             state.usage.sessions.retain(|p, _| live.contains(p));
-            state.usage.tokens = tokens;
+            state.usage.contexts = contexts;
+            if let Some(t) = tokens.take() {
+                state.usage.tokens = t;
+            }
             if codex_usage.is_some() {
-                state.usage.codex = codex_usage;
+                state.usage.codex = codex_usage.take();
             }
             let after = view(&state);
             if before != after {
                 let _ = app.emit("usage", after);
             }
         }
-        thread::sleep(EVERY);
+        thread::sleep(TICK);
     }
 }

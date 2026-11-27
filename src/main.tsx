@@ -22,6 +22,11 @@ void api.localeSet(locale);
 applyAppearance();
 useSettings.subscribe(() => applyAppearance());
 useSystemDark.subscribe(() => applyAppearance());
+// The browser's own menu (Back, Reload, Inspect...) means nothing in a desktop app.
+document.addEventListener("contextmenu", (e) => {
+  if (!(e.target instanceof Element && e.target.closest("input, textarea, [contenteditable]")))
+    e.preventDefault();
+});
 void startSession();
 void startAgents();
 void startTasks();

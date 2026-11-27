@@ -4,9 +4,12 @@ use std::collections::HashMap;
 use std::fs;
 use std::io::{BufRead, BufReader, Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use solace_core::usage::{ProviderUsage, Tokens, parse_claude_log_line, parse_codex_line};
+use solace_core::usage::{
+    ContextUse, ProviderUsage, Tokens, parse_claude_log_line, parse_codex_context,
+    parse_codex_line, parse_codex_meta, parse_opencode_message,
+};
 
 const TAIL: u64 = 1024 * 1024;
 const DAY: u64 = 24 * 3600;
@@ -100,6 +103,127 @@ impl CodexCache {
 /// The latest Codex rate limits under `home` (`~/.codex`).
 pub fn codex_limits(home: &Path) -> Option<ProviderUsage> {
     CodexCache::default().read(home)
+}
+
+/// Same folder, whatever the separators, case or trailing slash.
+fn same_dir(a: &str, b: &str) -> bool {
+    let norm = |s: &str| s.replace('\\', "/").trim_end_matches('/').to_lowercase();
+    norm(a) == norm(b)
+}
+
+/// Context held by Codex sessions, read from the tail of their rollouts.
+#[derive(Default)]
+pub struct CodexContext {
+    /// Per rollout: (mtime, session cwd, context at that mtime), so unchanged files aren't re-read.
+    files: HashMap<PathBuf, (SystemTime, Option<String>, Option<ContextUse>)>,
+}
+
+impl CodexContext {
+    /// The newest recent rollout started in `cwd`. Two Codex panes in one folder share the answer.
+    pub fn read(&mut self, home: &Path, cwd: &Path) -> Option<ContextUse> {
+        let want = cwd.to_string_lossy();
+        let files = rollouts(&home.join("sessions"));
+        self.files.retain(|p, _| files.iter().any(|(f, _)| f == p));
+        for (path, mtime) in files {
+            let known = self.files.get(&path).filter(|k| k.0 == mtime);
+            let (_, session_cwd, ctx) = match known {
+                Some(k) => k.clone(),
+                None => {
+                    let k = (mtime, first_cwd(&path), tail_context(&path));
+                    self.files.insert(path, k.clone());
+                    k
+                }
+            };
+            if session_cwd.is_some_and(|c| same_dir(&c, &want)) {
+                return ctx;
+            }
+        }
+        None
+    }
+}
+
+fn first_cwd(path: &Path) -> Option<String> {
+    let mut line = String::new();
+    BufReader::new(fs::File::open(path).ok()?)
+        .read_line(&mut line)
+        .ok()?;
+    parse_codex_meta(&line)?.0
+}
+
+fn tail_context(path: &Path) -> Option<ContextUse> {
+    let text = read_tail(path)?;
+    let mut ctx = text.lines().rev().find_map(parse_codex_context)?;
+    ctx.model = text.lines().rev().find_map(|l| parse_codex_meta(l)?.1);
+    Some(ctx)
+}
+
+/// Context windows of OpenCode's models, from its models.dev cache; re-read when the file changes.
+#[derive(Default)]
+pub struct OpencodeContext {
+    windows: HashMap<(String, String), u64>,
+    stamp: Option<SystemTime>,
+}
+
+impl OpencodeContext {
+    /// The newest live top-level session of `cwd` and how full its last answer left the window.
+    pub fn read(&mut self, db: &Path, models: &Path, cwd: &Path) -> Option<ContextUse> {
+        use rusqlite::{Connection, OpenFlags};
+        let conn = Connection::open_with_flags(
+            db,
+            OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX,
+        )
+        .ok()?;
+        conn.busy_timeout(Duration::from_millis(200)).ok()?;
+        let dir = cwd.to_string_lossy();
+        let (fwd, back) = (dir.replace('\\', "/"), dir.replace('/', "\\"));
+        let id: String = conn
+            .query_row(
+                "SELECT id FROM session WHERE directory IN (?1, ?2) AND time_archived IS NULL \
+                 AND parent_id IS NULL ORDER BY time_updated DESC LIMIT 1",
+                [&fwd, &back],
+                |r| r.get(0),
+            )
+            .ok()?;
+        let mut stmt = conn
+            .prepare(
+                "SELECT data FROM message WHERE session_id = ?1 ORDER BY time_created DESC LIMIT 20",
+            )
+            .ok()?;
+        let rows = stmt.query_map([&id], |r| r.get::<_, String>(0)).ok()?;
+        let (mut ctx, provider) = rows.flatten().find_map(|d| parse_opencode_message(&d))?;
+        self.refresh(models);
+        ctx.limit = self.windows.get(&(provider?, ctx.model.clone()?)).copied();
+        Some(ctx)
+    }
+
+    fn refresh(&mut self, models: &Path) {
+        let Ok(stamp) = fs::metadata(models).and_then(|m| m.modified()) else {
+            return;
+        };
+        if self.stamp == Some(stamp) {
+            return;
+        }
+        self.stamp = Some(stamp);
+        self.windows.clear();
+        let Some(json) = fs::read(models)
+            .ok()
+            .and_then(|b| serde_json::from_slice::<serde_json::Value>(&b).ok())
+        else {
+            return;
+        };
+        for (provider, p) in json.as_object().into_iter().flatten() {
+            for (model, m) in p
+                .get("models")
+                .and_then(|m| m.as_object())
+                .into_iter()
+                .flatten()
+            {
+                if let Some(n) = m.pointer("/limit/context").and_then(|n| n.as_u64()) {
+                    self.windows.insert((provider.clone(), model.clone()), n);
+                }
+            }
+        }
+    }
 }
 
 struct FileState {
@@ -229,7 +353,6 @@ fn collect(dir: &Path, depth: u8, cutoff: u64, out: &mut Vec<PathBuf>) {
 mod tests {
     use super::*;
     use std::io::Write;
-    use std::time::Duration;
 
     fn temp(name: &str) -> PathBuf {
         let d = std::env::temp_dir().join(format!("solace-usage-{name}-{}", std::process::id()));
@@ -363,6 +486,80 @@ mod tests {
             .unwrap();
         log.scan(&d, NOW);
         assert_eq!(log.totals_since(0).output, 9 + 3 + 3 + 50);
+        fs::remove_dir_all(&d).unwrap();
+    }
+
+    #[test]
+    fn codex_context_by_cwd() {
+        let d = temp("codex-ctx");
+        let day = d.join("sessions/2026/11/26");
+        fs::create_dir_all(&day).unwrap();
+        let tc = |n: u64| {
+            format!(
+                r#"{{"type":"event_msg","payload":{{"type":"token_count","info":{{"last_token_usage":{{"input_tokens":{n}}},"model_context_window":1000}}}}}}"#
+            )
+        };
+        let meta = |cwd: &str| format!(r#"{{"type":"session_meta","payload":{{"cwd":"{cwd}"}}}}"#);
+        let turn = r#"{"type":"turn_context","payload":{"model":"gpt-5"}}"#;
+        fs::write(
+            day.join("rollout-a.jsonl"),
+            format!(
+                "{}\n{turn}\n{}\n{}\n",
+                meta("C:\\\\Proj\\\\A"),
+                tc(100),
+                tc(300)
+            ),
+        )
+        .unwrap();
+        fs::write(
+            day.join("rollout-b.jsonl"),
+            format!("{}\n{}\n", meta("C:\\\\Other"), tc(5)),
+        )
+        .unwrap();
+        let mut cache = CodexContext::default();
+        let c = cache.read(&d, Path::new("c:/proj/a/")).unwrap();
+        assert_eq!(
+            (c.used, c.limit, c.model.as_deref()),
+            (300, Some(1000), Some("gpt-5"))
+        );
+        assert!(cache.read(&d, Path::new("C:/nowhere")).is_none());
+        fs::remove_dir_all(&d).unwrap();
+    }
+
+    #[test]
+    fn opencode_context_from_sqlite() {
+        let d = temp("opencode");
+        let db = d.join("opencode.db");
+        let conn = rusqlite::Connection::open(&db).unwrap();
+        conn.execute_batch(
+            "CREATE TABLE session(id TEXT, directory TEXT, time_updated INT, time_archived INT, parent_id TEXT);
+             CREATE TABLE message(id TEXT, session_id TEXT, time_created INT, data TEXT);
+             INSERT INTO session VALUES ('s1','C:\\Proj',2,NULL,NULL),('s2','C:\\Proj',3,NULL,'s1');
+             INSERT INTO message VALUES
+               ('m1','s1',1,'{\"role\":\"assistant\",\"modelID\":\"mm\",\"providerID\":\"pp\",\"tokens\":{\"input\":10,\"cache\":{\"read\":5,\"write\":0}}}'),
+               ('m2','s1',2,'{\"role\":\"assistant\",\"tokens\":{\"input\":0}}'),
+               ('m3','s2',3,'{\"role\":\"assistant\",\"modelID\":\"x\",\"providerID\":\"x\",\"tokens\":{\"input\":99}}');",
+        )
+        .unwrap();
+        drop(conn);
+        let models = d.join("models.json");
+        fs::write(
+            &models,
+            r#"{"pp":{"models":{"mm":{"limit":{"context":2000}}}}}"#,
+        )
+        .unwrap();
+        let mut cache = OpencodeContext::default();
+        let c = cache.read(&db, &models, Path::new("C:/Proj")).unwrap();
+        assert_eq!(
+            (c.used, c.limit, c.model.as_deref()),
+            (15, Some(2000), Some("mm"))
+        );
+        assert!(cache.read(&db, &models, Path::new("C:/none")).is_none());
+        assert!(
+            cache
+                .read(&d.join("missing.db"), &models, Path::new("C:/Proj"))
+                .is_none()
+        );
         fs::remove_dir_all(&d).unwrap();
     }
 

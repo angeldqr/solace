@@ -29,7 +29,23 @@ pub struct ProviderUsage {
 pub struct ClaudeSession {
     pub model: Option<String>,
     pub cost_usd: Option<f64>,
-    pub context_used_percent: Option<f64>,
+    pub context: Option<ContextUse>,
+}
+
+/// How much of a model's context window a session holds right now.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ContextUse {
+    pub used: u64,
+    pub limit: Option<u64>,
+    pub model: Option<String>,
+}
+
+impl ContextUse {
+    pub fn percent(&self) -> Option<f64> {
+        let limit = self.limit.filter(|l| *l > 0)?;
+        Some(self.used as f64 / limit as f64 * 100.0)
+    }
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -101,10 +117,6 @@ pub fn parse_claude_status(status: &Value) -> (Option<Vec<Limit>>, ClaudeSession
             .collect::<Vec<_>>()
     });
     let limits = limits.filter(|l| !l.is_empty());
-    let ctx = status.get("context_window");
-    let context_used_percent = ctx
-        .and_then(|c| c.get("used_percentage"))
-        .and_then(Value::as_f64);
     let session = ClaudeSession {
         model: status
             .pointer("/model/display_name")
@@ -113,9 +125,84 @@ pub fn parse_claude_status(status: &Value) -> (Option<Vec<Limit>>, ClaudeSession
         cost_usd: status
             .pointer("/cost/total_cost_usd")
             .and_then(Value::as_f64),
-        context_used_percent,
+        context: claude_context(status),
     };
     (limits, session)
+}
+
+/// Claude reports the percentage itself (the cumulative `total_input_tokens` would overstate it);
+/// without it, the last request's token counts stand in.
+fn claude_context(status: &Value) -> Option<ContextUse> {
+    let ctx = status.get("context_window")?;
+    let limit = ctx.get("context_window_size")?.as_u64()?;
+    let used = match ctx.get("used_percentage").and_then(Value::as_f64) {
+        Some(p) => (p / 100.0 * limit as f64).round() as u64,
+        None => {
+            let cur = ctx.get("current_usage").filter(|c| c.is_object())?;
+            let n = |k: &str| cur.get(k).and_then(Value::as_u64).unwrap_or(0);
+            n("input_tokens") + n("cache_creation_input_tokens") + n("cache_read_input_tokens")
+        }
+    };
+    Some(ContextUse {
+        used,
+        limit: Some(limit),
+        model: None,
+    })
+}
+
+/// A Codex `token_count` event carrying `info`: the last request's input is the context held.
+pub fn parse_codex_context(line: &str) -> Option<ContextUse> {
+    if !line.contains("token_count") {
+        return None;
+    }
+    let v: Value = serde_json::from_str(line).ok()?;
+    let payload = v.get("payload")?;
+    if payload.get("type")?.as_str()? != "token_count" {
+        return None;
+    }
+    let info = payload.get("info").filter(|i| i.is_object())?;
+    Some(ContextUse {
+        used: info.pointer("/last_token_usage/input_tokens")?.as_u64()?,
+        limit: info.get("model_context_window").and_then(Value::as_u64),
+        model: None,
+    })
+}
+
+/// (cwd, model) from a Codex `session_meta` or `turn_context` line.
+pub fn parse_codex_meta(line: &str) -> Option<(Option<String>, Option<String>)> {
+    if !(line.contains("session_meta") || line.contains("turn_context")) {
+        return None;
+    }
+    let v: Value = serde_json::from_str(line).ok()?;
+    if !matches!(v.get("type")?.as_str()?, "session_meta" | "turn_context") {
+        return None;
+    }
+    let p = v.get("payload")?;
+    let s = |k: &str| p.get(k).and_then(Value::as_str).map(str::to_string);
+    Some((s("cwd"), s("model")))
+}
+
+/// An OpenCode assistant message (the `data` column) that has token counts, with its provider id
+/// (needed to look the model's window up).
+pub fn parse_opencode_message(data: &str) -> Option<(ContextUse, Option<String>)> {
+    let v: Value = serde_json::from_str(data).ok()?;
+    if v.get("role")?.as_str()? != "assistant" {
+        return None;
+    }
+    let t = v.get("tokens")?;
+    let n = |p: &str| t.pointer(p).and_then(Value::as_u64).unwrap_or(0);
+    let used = n("/input") + n("/cache/read") + n("/cache/write");
+    // A message still streaming reports zeros: the previous one is the truth.
+    if used == 0 {
+        return None;
+    }
+    let s = |k: &str| v.get(k).and_then(Value::as_str).map(str::to_string);
+    let ctx = ContextUse {
+        used,
+        limit: None,
+        model: s("modelID"),
+    };
+    Some((ctx, s("providerID")))
 }
 
 /// A Codex `token_count` event with at least one rate-limit window. Windows are identified by
@@ -251,7 +338,7 @@ mod tests {
         assert_eq!(limits[1].resets_at, None);
         assert_eq!(s.model.as_deref(), Some("Opus"));
         assert_eq!(s.cost_usd, Some(0.42));
-        assert_eq!(s.context_used_percent, Some(12.5));
+        assert!(s.context.is_none());
 
         let (limits, s) = parse_claude_status(&json!({"model": {"display_name": "Sonnet"}}));
         assert!(limits.is_none());
@@ -261,6 +348,41 @@ mod tests {
         let (limits, _) =
             parse_claude_status(&json!({"rate_limits": {"five_hour": {"used_percentage": 5.0}}}));
         assert_eq!(limits.unwrap().len(), 1);
+    }
+
+    #[test]
+    fn context_shapes() {
+        let (_, s) = parse_claude_status(&json!({"context_window": {
+            "used_percentage": 25.0, "context_window_size": 200000, "total_input_tokens": 999999}}));
+        let c = s.context.unwrap();
+        assert_eq!(
+            (c.used, c.limit, c.percent()),
+            (50000, Some(200000), Some(25.0))
+        );
+        let (_, s) = parse_claude_status(&json!({"context_window": {
+            "context_window_size": 1000, "current_usage": {"input_tokens": 100, "cache_read_input_tokens": 150}}}));
+        assert_eq!(s.context.unwrap().used, 250);
+
+        let tc = r#"{"type":"event_msg","payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":42000},"model_context_window":258400}}}"#;
+        let c = parse_codex_context(tc).unwrap();
+        assert_eq!((c.used, c.limit), (42000, Some(258400)));
+        let null = r#"{"type":"event_msg","payload":{"type":"token_count","info":null}}"#;
+        assert!(parse_codex_context(null).is_none());
+        let tcx = r#"{"type":"turn_context","payload":{"cwd":"C:\\a","model":"gpt-5"}}"#;
+        assert_eq!(
+            parse_codex_meta(tcx),
+            Some((Some("C:\\a".into()), Some("gpt-5".into())))
+        );
+        assert!(parse_codex_meta(tc).is_none());
+
+        let m = r#"{"role":"assistant","modelID":"m1","providerID":"p1","tokens":{"total":9,"input":10,"output":5,"cache":{"read":20,"write":30}}}"#;
+        let (c, p) = parse_opencode_message(m).unwrap();
+        assert_eq!(
+            (c.used, c.model.as_deref(), p.as_deref()),
+            (60, Some("m1"), Some("p1"))
+        );
+        assert!(parse_opencode_message(r#"{"role":"user"}"#).is_none());
+        assert!(parse_opencode_message(r#"{"role":"assistant","tokens":{"input":0}}"#).is_none());
     }
 
     #[test]

@@ -11,6 +11,7 @@ ignore = "0.4"
 interprocess = "2.4"
 notify = "9"
 portable-pty = "0.9"
+rusqlite = { version = "0.43", features = ["bundled"] }
 solace-core = { path = "../solace-core" }
 sysinfo = { version = "0.40", default-features = false, features = ["system"] }
 vt100 = "0.18"

@@ -204,7 +204,7 @@ fn parse(out: &str) -> Vec<LinuxProcess> {
 }
 
 /// By process name, else by command: npm installs agents as scripts that run as
-/// `node /usr/local/bin/gemini`, with no node_modules path in the command line.
+/// `node /usr/local/bin/opencode`, with no node_modules path in the command line.
 fn identify(process: &LinuxProcess) -> Option<&'static AgentDef> {
     agents::identify_process(&process.name, &process.args)
 }
@@ -257,7 +257,7 @@ mod tests {
              p|4|40|1|bash|-bash\n\
              p|5|50|1|sh|sh\n\
              p|5|51|50|codex|codex\n\
-             p|6|60|1|node|node^--no-warnings^/usr/local/bin/gemini\n\
+             p|6|60|1|node|node^--no-warnings^/usr/local/bin/opencode\n\
              p|8|80|1|vim|vim^claude\n\
              p|9|90|1||/bin/sh^/tmp/claude\n\
              garbage line\n",
@@ -269,7 +269,7 @@ mod tests {
         assert_eq!(found[&5].id, "codex");
         assert!(!found.contains_key(&4));
         assert_eq!(
-            found[&6].id, "gemini",
+            found[&6].id, "opencode",
             "an npm script run through its symlink"
         );
         assert!(

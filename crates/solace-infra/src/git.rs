@@ -227,12 +227,26 @@ fn worktree_command(top: &Path, wsl: bool, args: &[&str]) -> Command {
     }
 }
 
-/// Adds a worktree at `top/rel_dir` on a new branch started from HEAD. `.solace/` gets its own
+/// The full id of the commit `base` names (a branch, tag or id); errors when there is none.
+pub fn resolve_commit(top: &Path, base: &str, wsl: bool) -> Result<String, String> {
+    let spec = format!("{base}^{{commit}}");
+    text(top, wsl, &["rev-parse", "--verify", "--quiet", &spec])
+        .map(|id| id.trim().to_string())
+        .map_err(|_| format!("unknown base {base}"))
+}
+
+/// Adds a worktree at `top/rel_dir` on a new branch started from `base` (a validated ref). `.solace/` gets its own
 /// `.gitignore` so worktrees never show up as changes; the user's files are not touched.
 /// Plain `git`, not `git()`: that one blanks the repository's filters, and a worktree checked out
 /// without them would hold LFS pointers instead of files. The agents run this repository's tools
 /// in there anyway, so trusting its config here adds nothing.
-pub fn worktree_add(top: &Path, rel_dir: &str, branch: &str, wsl: bool) -> Result<(), String> {
+pub fn worktree_add(
+    top: &Path,
+    rel_dir: &str,
+    branch: &str,
+    base: &str,
+    wsl: bool,
+) -> Result<(), String> {
     let solace = top.join(".solace");
     fs::create_dir_all(&solace).map_err(|e| e.to_string())?;
     let ignore = solace.join(".gitignore");
@@ -242,7 +256,7 @@ pub fn worktree_add(top: &Path, rel_dir: &str, branch: &str, wsl: bool) -> Resul
     run(worktree_command(
         top,
         wsl,
-        &["worktree", "add", "-b", branch, rel_dir, "HEAD"],
+        &["worktree", "add", "-b", branch, rel_dir, base],
     ))
 }
 
@@ -506,6 +520,13 @@ pub fn diff(
     Ok(text)
 }
 
+/// Bytes of `path` at HEAD, for previewing images; `None` when it is missing there or over `max`.
+pub fn show_image(dir: &Path, path: &str, max: usize) -> Result<Option<Vec<u8>>, String> {
+    let spec = format!("HEAD:{}", path.replace('\\', "/"));
+    let output = git(dir, &["show", "--no-textconv", &spec]).map_err(|e| e.to_string())?;
+    Ok((output.status.success() && output.stdout.len() <= max).then_some(output.stdout))
+}
+
 fn parse_status(porcelain: &str) -> Vec<Change> {
     let mut changes = Vec::new();
     let mut fields = porcelain.split('\0').filter(|f| !f.is_empty());
@@ -683,6 +704,35 @@ mod tests {
     }
 
     #[test]
+    fn show_image_reads_head_bytes() {
+        if git(&std::env::temp_dir(), &["--version"]).is_err() {
+            eprintln!("skipped: git is not installed");
+            return;
+        }
+        let root = std::env::temp_dir().join(format!("solace-git-show-{}", std::process::id()));
+        fs::create_dir_all(&root).unwrap();
+        let run =
+            |args: &[&str]| assert!(git(&root, args).unwrap().status.success(), "git {args:?}");
+        run(&["init", "-q"]);
+        fs::write(root.join("a.png"), [1u8, 2, 3]).unwrap();
+        run(&["add", "a.png"]);
+        run(&[
+            "-c",
+            "user.name=t",
+            "-c",
+            "user.email=t@t",
+            "commit",
+            "-q",
+            "-m",
+            "x",
+        ]);
+        assert_eq!(show_image(&root, "a.png", 10).unwrap(), Some(vec![1, 2, 3]));
+        assert_eq!(show_image(&root, "a.png", 2).unwrap(), None);
+        assert_eq!(show_image(&root, "none.png", 10).unwrap(), None);
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
     fn worktrees_are_added_hidden_and_removed_only_when_clean() {
         if git(&std::env::temp_dir(), &["--version"]).is_err() {
             eprintln!("skipped: git is not installed");
@@ -713,7 +763,9 @@ mod tests {
         assert!(!is_dirty(&root, false).unwrap());
 
         let rel = ".solace/worktrees/b1-1";
-        worktree_add(&top, rel, "solace/b1-1-x", false).unwrap();
+        assert!(resolve_commit(&top, "nope", false).is_err());
+        assert!(resolve_commit(&top, "HEAD", false).is_ok());
+        worktree_add(&top, rel, "solace/b1-1-x", "HEAD", false).unwrap();
         assert!(top.join(rel).join("f.txt").is_file());
         assert!(top.join(".solace/.gitignore").is_file());
         assert_eq!(
@@ -740,7 +792,7 @@ mod tests {
         // The retrying removal: refuses dirty work, removes clean worktrees, and cleans up a
         // folder git no longer knows but could not delete.
         let rel2 = ".solace/worktrees/b1-2";
-        worktree_add(&top, rel2, "solace/b1-2-y", false).unwrap();
+        worktree_add(&top, rel2, "solace/b1-2-y", "HEAD", false).unwrap();
         assert!(worktree_registered(&top, &top.join(rel2), false).unwrap());
         fs::write(top.join(rel2).join("f.txt"), "dirty\n").unwrap();
         assert!(worktree_remove_retrying(&top, rel2, false, false).is_err());

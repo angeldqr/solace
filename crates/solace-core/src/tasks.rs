@@ -18,6 +18,9 @@ pub struct TaskSpec {
     /// Agent kind for this task; the batch's kind when absent.
     #[serde(default)]
     pub kind: Option<String>,
+    /// A branch or commit the task's worktree starts from; HEAD when absent.
+    #[serde(default)]
+    pub base: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -51,6 +54,15 @@ pub fn validate(tasks: &[TaskSpec]) -> Result<(), String> {
     for (i, task) in tasks.iter().enumerate() {
         if task.title.trim().is_empty() || task.prompt.trim().is_empty() {
             return Err(format!("task {} needs a title and a prompt", i + 1));
+        }
+        // It ends up as a git argument, so nothing that could pass for an option or a range.
+        if let Some(base) = &task.base
+            && (base.is_empty()
+                || base.starts_with('-')
+                || base.contains("..")
+                || base.chars().any(|c| c.is_whitespace() || c.is_control()))
+        {
+            return Err(format!("task {} has an invalid base {base:?}", i + 1));
         }
     }
     Ok(())
@@ -189,7 +201,20 @@ mod tests {
             title: title.into(),
             prompt: prompt.into(),
             kind: None,
+            base: None,
         }
+    }
+
+    #[test]
+    fn rejects_bases_that_could_be_git_options() {
+        for bad in ["", "-x", "a b", "a..b", "a\nb"] {
+            let mut task = spec("t", "p");
+            task.base = Some(bad.into());
+            assert!(validate(&[task]).is_err(), "{bad:?}");
+        }
+        let mut task = spec("t", "p");
+        task.base = Some("solace/b1-1-x".into());
+        assert!(validate(&[task]).is_ok());
     }
 
     #[test]
@@ -297,8 +322,11 @@ mod tests {
             "claude"
         );
         assert_eq!(
-            pick_kind("gemini", &[("gemini", None), ("codex", Some(90.0))]),
-            "gemini"
+            pick_kind(
+                "antigravity",
+                &[("antigravity", None), ("codex", Some(90.0))]
+            ),
+            "antigravity"
         );
         // Everything exhausted: still an answer, the lead's.
         assert_eq!(

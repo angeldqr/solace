@@ -88,7 +88,7 @@ enum AgentCommand {
     /// Split this pane and start an agent in it.
     Start {
         name: String,
-        /// claude, codex, gemini, qwen, kimi, opencode, copilot, cursor or amp.
+        /// claude, codex, antigravity, qwen, kimi, opencode, copilot, cursor or amp.
         #[arg(long)]
         kind: String,
         #[arg(long)]
@@ -120,7 +120,7 @@ enum AgentCommand {
 
 #[derive(Subcommand)]
 enum TasksCommand {
-    /// Start one worker agent per task (a JSON array of {title, prompt, kind?}, on stdin or in
+    /// Start one worker agent per task (a JSON array of {title, prompt, kind?, base?}, on stdin or in
     /// --file), each in its own git worktree and pane.
     Start {
         /// An agent kind, or "auto" for the one with the most room left in its usage limits.
@@ -186,7 +186,9 @@ fn read_tasks(file: Option<PathBuf>) -> Result<Vec<TaskSpec>, String> {
     }
     let text = String::from_utf8(bytes).map_err(|_| "the tasks must be UTF-8 text")?;
     serde_json::from_str(text.trim_start_matches('\u{feff}')).map_err(|e| {
-        format!("the tasks must be a JSON array of {{\"title\", \"prompt\", \"kind\"?}}: {e}")
+        format!(
+            "the tasks must be a JSON array of {{\"title\", \"prompt\", \"kind\"?, \"base\"?}}: {e}"
+        )
     })
 }
 

@@ -316,7 +316,7 @@ fn start_agent(
 
 /// Types the agent's command into the pane's shell, once the shell has shown its prompt: typed
 /// before that, the command can be swallowed by shell startup.
-fn start_command(
+pub(crate) fn start_command(
     app: &AppHandle,
     pane: PaneId,
     def: &AgentDef,

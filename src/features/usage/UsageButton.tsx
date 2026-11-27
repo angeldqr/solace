@@ -1,6 +1,6 @@
 import { Popover } from "@base-ui/react/popover";
 import { Gauge } from "lucide-react";
-import { lazy, Suspense, useEffect } from "react";
+import { lazy, Suspense, useEffect, useState } from "react";
 import { t } from "../../shared/i18n";
 import { Tooltip } from "../../shared/ui/Tooltip";
 import { useNow } from "../../shared/useNow";
@@ -14,7 +14,7 @@ const UsagePopover = lazy(() =>
 const RADIUS = 6.5;
 const CIRCUMFERENCE = 2 * Math.PI * RADIUS;
 
-function Ring({ percent }: { percent: number }) {
+export function Ring({ percent }: { percent: number }) {
   const shown = Math.min(100, Math.max(0, percent));
   return (
     <svg viewBox="0 0 16 16" className={`size-4 -rotate-90 ${tone(percent)}`} aria-hidden>
@@ -41,8 +41,9 @@ export function UsageButton() {
   useEffect(startUsage, []);
   const now = useNow(30_000);
   const percent = headline(view, now);
+  const [open, setOpen] = useState(false);
   return (
-    <Popover.Root>
+    <Popover.Root open={open} onOpenChange={setOpen}>
       <Tooltip label={t("usage")}>
         <Popover.Trigger
           aria-label={percent === null ? t("usage") : `${t("usage")} ${Math.round(percent)}%`}
@@ -65,7 +66,7 @@ export function UsageButton() {
         <Popover.Positioner side="bottom" align="end" sideOffset={6} className="z-50">
           <Popover.Popup className="glass w-80 rounded-xl border border-line p-4 shadow-black/40 shadow-xl outline-none transition-[opacity,scale] duration-(--motion-duration) data-ending-style:opacity-0 data-starting-style:scale-[0.98] data-starting-style:opacity-0">
             <Suspense fallback={null}>
-              <UsagePopover view={view} />
+              <UsagePopover view={view} onFocusPane={() => setOpen(false)} />
             </Suspense>
           </Popover.Popup>
         </Popover.Positioner>

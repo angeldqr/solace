@@ -1,6 +1,6 @@
 ---
 name: solace
-description: Delegate work to other AI coding agents running beside you in Solace. Use when SOLACE_ENV=1 and a task splits into parts another agent (Codex, Claude Code, Gemini, ...) can do in parallel, or when you want a second agent to review your work, or when the user gives several independent tasks: fan them out in parallel with `solace tasks start`.
+description: Delegate work to other AI coding agents running beside you in Solace. Use when SOLACE_ENV=1 and a task splits into parts another agent (Codex, Claude Code, Antigravity, ...) can do in parallel, or when you want a second agent to review your work, or when the user gives several independent tasks: fan them out in parallel with `solace tasks start`.
 ---
 
 # Solace: work with other agents
@@ -17,7 +17,7 @@ solace agent prompt reviewer "Review the diff in src/auth for bugs. Reply with a
 ```
 
 - `agent start <name> --kind <kind>` splits your pane and launches the agent there. Kinds:
-  `claude`, `codex`, `gemini`, `qwen`, `kimi`, `opencode`, `copilot`, `cursor`, `amp`.
+  `claude`, `codex`, `antigravity`, `qwen`, `kimi`, `opencode`, `copilot`, `cursor`, `amp`.
   Add `--down` to split below instead of to the right, or `--prompt "..."` to send a first task
   once the agent is ready.
 - `agent prompt <name> "<text>" --wait` sends the text and waits until the agent stops working,
@@ -85,6 +85,24 @@ solace tasks start --file $env:TEMP\tasks.json
   explicitly asks for it: it throws that work away. Branches are always kept.
 - Worktrees live in `.solace/` inside the repository, which has its own `.gitignore`. Tools that
   ignore `.gitignore` (some test runners, bundlers, searches) may need `.solace` excluded.
+
+## Review round (agents reviewing each other)
+
+Once `solace tasks wait` shows every worker done, start a second batch where each task reviews
+another worker's branch, preferably with a different CLI (codex reviews claude's branch and vice
+versa). `base` makes the reviewer's worktree start from that branch, so it sees the work. Use the
+base sha from the first batch's reply.
+
+```sh
+solace tasks start <<'EOF'
+[
+  {"title": "Review: Fix login redirect", "kind": "codex", "base": "solace/b1x-1-fix-login-redirect",
+   "prompt": "Review the commits on this branch since <batch base sha> (git diff <sha>..HEAD) for bugs, security and missing tests. Fix real problems with commits; then report findings with solace task done."}
+]
+EOF
+```
+
+Then summarise the findings for the user; merge only when they ask.
 
 ## If SOLACE_TASK_ID is set, you are a worker
 

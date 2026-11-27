@@ -1,6 +1,6 @@
 # Solace
 
-A desktop terminal for running and orchestrating AI coding agents: Claude Code, Codex, Gemini, Kimi, or any CLI agent. Agents can start other agents and hand them work, all inside one workspace.
+A desktop terminal for running and orchestrating AI coding agents: Claude Code, Codex, Antigravity, Kimi, or any CLI agent. Agents can start other agents and hand them work, all inside one workspace.
 
 > Status: early development (v0.0.x). Not ready for daily use yet.
 
@@ -9,7 +9,7 @@ Runs on Windows 10/11, macOS 11+ (Apple Silicon) and Linux (x86_64). Windows is 
 ## Features
 
 - **Terminals** with tabs and resizable splits, grouped into spaces (one per project folder). Pick PowerShell, cmd, Git Bash or WSL as the shell. Resize splits with the mouse or **Alt+Shift+arrows**; a shell that fails stays on screen and **Enter** starts a new one.
-- **Agent awareness**: Claude Code, Codex, Gemini CLI, Qwen Code, Kimi Code, OpenCode, Copilot, Cursor Agent and Amp are recognized in any pane, also inside WSL, with their state (working, needs you, done, idle). For Claude Code, turn on **Settings > Agents > Claude Code integration** and its hooks report the exact state instead of Solace reading the screen.
+- **Agent awareness**: Claude Code, Codex, Antigravity CLI, Qwen Code, Kimi Code, OpenCode, Copilot, Cursor Agent and Amp are recognized in any pane, also inside WSL, with their state (working, needs you, done, idle). For Claude Code, turn on **Settings > Agents > Claude Code integration** and its hooks report the exact state instead of Solace reading the screen.
 - **Orchestration**: inside Solace, the `solace` CLI lets an agent open panes, start other agents, prompt them and read their answers (`solace agent start reviewer --kind codex`, `solace agent prompt reviewer "..." --wait`). Run `solace skill install` to teach Claude Code how.
 - **Files and Changes** panels with a lazy file tree, git status and diffs, refreshed live.
 - **Themes**: five built-in themes (one light), VS Code theme import, terminal font and cursor settings, English and Spanish.

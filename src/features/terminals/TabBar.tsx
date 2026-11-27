@@ -1,11 +1,54 @@
-import { Plus, SquareTerminal, X } from "lucide-react";
-import type { KeyboardEvent } from "react";
+import { Menu } from "@base-ui/react/menu";
+import { ChevronDown, Plus, SquareTerminal, X } from "lucide-react";
+import { type KeyboardEvent, useState } from "react";
 import { useAgents } from "../../shared/agents";
 import { t } from "../../shared/i18n";
 import { api, type Space } from "../../shared/ipc";
 import { displayTitle, useSession } from "../../shared/session";
 import { AgentIcon } from "../../shared/ui/AgentIcon";
 import { IconButton } from "../../shared/ui/IconButton";
+import { Kbd } from "../../shared/ui/Kbd";
+
+const ITEM =
+  "flex h-8 cursor-default select-none items-center gap-2 rounded-md px-2 text-body text-fg-muted outline-none transition-colors duration-150 data-disabled:opacity-50 data-highlighted:bg-hover data-highlighted:text-fg";
+
+/** Chevron next to "+": a new tab with a plain terminal or with an installed agent already running. */
+function NewTabMenu({ space }: { space: Space["id"] }) {
+  const [installed, setInstalled] = useState<[string, string][]>([]);
+  return (
+    <Menu.Root onOpenChange={(open) => open && api.agentsInstalled().then(setInstalled)}>
+      <Menu.Trigger
+        aria-label={t("newTabWith")}
+        className="flex size-6 items-center justify-center rounded-md text-fg-muted transition-colors duration-150 hover:bg-hover hover:text-fg"
+      >
+        <ChevronDown className="size-3.5" aria-hidden />
+      </Menu.Trigger>
+      <Menu.Portal>
+        <Menu.Positioner sideOffset={4} align="start" className="z-50">
+          <Menu.Popup className="glass min-w-48 rounded-lg border border-line p-1 shadow-black/40 shadow-xl outline-none transition-[opacity,scale] duration-(--motion-duration) data-ending-style:opacity-0 data-starting-style:scale-[0.98] data-starting-style:opacity-0">
+            <Menu.Item className={ITEM} onClick={() => api.tabNew(space)}>
+              <SquareTerminal className="size-4" aria-hidden />
+              <span className="flex-1">{t("terminal")}</span>
+              <Kbd keys="Ctrl+Shift+T" />
+            </Menu.Item>
+            <Menu.Separator className="my-1 h-px bg-line" />
+            {installed.length === 0 && (
+              <Menu.Item disabled className={ITEM}>
+                {t("noAgentsInstalled")}
+              </Menu.Item>
+            )}
+            {installed.map(([id, name]) => (
+              <Menu.Item key={id} className={ITEM} onClick={() => api.tabNewAgent(space, id)}>
+                <AgentIcon agent={id} className="size-4" />
+                {name}
+              </Menu.Item>
+            ))}
+          </Menu.Popup>
+        </Menu.Positioner>
+      </Menu.Portal>
+    </Menu.Root>
+  );
+}
 
 /** Roving focus only: activation stays on click, Enter and Space. */
 function moveFocus(event: KeyboardEvent<HTMLButtonElement>) {
@@ -78,6 +121,7 @@ export function TabBar({ space }: { space: Space }) {
       >
         <Plus aria-hidden />
       </IconButton>
+      <NewTabMenu space={space.id} />
     </div>
   );
 }

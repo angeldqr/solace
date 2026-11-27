@@ -64,6 +64,9 @@ export const api = {
   spaceClose: (space: SpaceId) => invoke("space_close", { space }),
   spaceActivate: (space: SpaceId) => invoke("space_activate", { space }),
   tabNew: (space: SpaceId) => invoke("tab_new", { space }),
+  tabNewAgent: (space: SpaceId, kind: string) => invoke("tab_new_agent", { space, kind }),
+  /** Agents found on PATH, as [id, name]. */
+  agentsInstalled: () => invoke<[string, string][]>("agents_installed"),
   tabActivate: (tab: TabId) => invoke("tab_activate", { tab }),
   tabClose: (tab: TabId) => invoke("tab_close", { tab }),
   paneSplit: (pane: PaneId, direction: Direction) => invoke("pane_split", { pane, direction }),
@@ -87,6 +90,8 @@ export const api = {
     untracked: boolean,
     ignoreWhitespace: boolean,
   ) => invoke<string>("git_diff", { space, path, from, untracked, ignoreWhitespace }),
+  gitShowImage: (space: SpaceId, path: string) =>
+    invoke<string | null>("git_show_image", { space, path }),
   fileOpen: (space: SpaceId, path: string) => invoke("file_open", { space, path }),
   openUrl: (url: string) => invoke("open_url", { url }),
   fileRead: (space: SpaceId, path: string) => invoke<FileContent>("file_read", { space, path }),
@@ -118,6 +123,8 @@ export interface TaskView {
   pane: PaneId | null;
   branch: string | null;
   worktree: string | null;
+  /** Commit the worktree started from; null in a shared folder. */
+  base: string | null;
   status: TaskStatus;
   /** What the agent in the pane is doing now; null when none runs there. */
   agentState: "idle" | "working" | "blocked" | null;
@@ -170,9 +177,12 @@ export interface UsageView {
   codex: ProviderUsage | null;
   sessions: {
     pane: PaneId;
+    agent: string;
     model: string | null;
+    usedTokens: number | null;
+    limit: number | null;
+    percent: number | null;
     costUsd: number | null;
-    contextUsedPercent: number | null;
   }[];
   tokens: {
     /** Unix seconds. */

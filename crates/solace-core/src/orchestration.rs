@@ -150,6 +150,7 @@ mod tests {
                 title: "t".into(),
                 prompt: "p".into(),
                 kind: None,
+                base: None,
             }],
         };
         let json = serde_json::to_string(&start).unwrap();

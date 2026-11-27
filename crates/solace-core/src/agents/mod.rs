@@ -98,7 +98,7 @@ pub fn identify(exe: &str, args: &[String]) -> Option<&'static AgentDef> {
 }
 
 /// Like `identify`, also seeing through interpreters: npm installs agents as scripts that run as
-/// `node /usr/local/bin/gemini`, with no node_modules path in the command line.
+/// `node /usr/local/bin/opencode`, with no node_modules path in the command line.
 pub fn identify_process(name: &str, args: &[String]) -> Option<&'static AgentDef> {
     let base = |arg: &str| {
         let file = arg.rsplit(['/', '\\']).next().unwrap_or(arg).to_lowercase();
@@ -228,11 +228,11 @@ mod tests {
     #[test]
     fn identifies_agents_run_by_an_interpreter() {
         let args = |s: &str| s.split(' ').map(String::from).collect::<Vec<_>>();
-        let gemini = identify_process("node", &args("node /usr/local/bin/gemini --yolo"));
-        assert_eq!(gemini.unwrap().id, "gemini");
+        let opencode = identify_process("node", &args("node /usr/local/bin/opencode --yolo"));
+        assert_eq!(opencode.unwrap().id, "opencode");
         assert_eq!(identify_process("claude", &[]).unwrap().id, "claude");
         // Only an interpreter's script counts, not any argument of any program.
-        assert!(identify_process("vim", &args("vim gemini")).is_none());
+        assert!(identify_process("vim", &args("vim opencode")).is_none());
         assert!(identify_process("node", &args("node server.js")).is_none());
     }
 
@@ -242,9 +242,9 @@ mod tests {
         assert_eq!(identify("C:\\bin\\claude.exe", &[]).unwrap().id, "claude");
         assert_eq!(identify("Codex.EXE", &[]).unwrap().id, "codex");
         let node = args(
-            r"node.exe C:\Users\me\AppData\Roaming\npm\node_modules\@google\gemini-cli\dist\index.js",
+            r"node.exe C:\Users\me\AppData\Roaming\npm\node_modules\opencode-ai\bin\opencode.js",
         );
-        assert_eq!(identify("node.exe", &node).unwrap().id, "gemini");
+        assert_eq!(identify("node.exe", &node).unwrap().id, "opencode");
         assert!(
             identify(
                 "node.exe",

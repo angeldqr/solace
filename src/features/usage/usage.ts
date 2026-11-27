@@ -39,6 +39,14 @@ export function headline(view: UsageView | null, now: number) {
   return limit ? limit.usedPercent : null;
 }
 
+/** 1234 -> "1k", 2_500_000 -> "2.5M". */
+export function compact(n: number) {
+  if (n >= 1e9) return `${(n / 1e9).toFixed(1)}B`;
+  if (n >= 1e6) return `${(n / 1e6).toFixed(1)}M`;
+  if (n >= 1e3) return `${Math.round(n / 1e3)}k`;
+  return String(n);
+}
+
 /** Colour token by how close the limit is. */
 export function tone(percent: number) {
   if (percent >= 85) return "text-danger";

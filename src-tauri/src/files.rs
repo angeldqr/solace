@@ -106,6 +106,23 @@ pub async fn git_diff(
     blocking(move || git::diff(&root, &path, from.as_deref(), untracked, ignore_whitespace)).await
 }
 
+/// The image as of the last commit, as a data URL; `None` when it didn't exist or is too big.
+#[tauri::command]
+pub async fn git_show_image(
+    state: State<'_, Shared>,
+    space: SpaceId,
+    path: String,
+) -> Result<Option<String>> {
+    inside(Path::new(""), &path)?;
+    let mime = image_mime(&path).ok_or("not an image")?;
+    let root = root_of(&state, space)?;
+    blocking(move || {
+        Ok(git::show_image(&root, &path, MAX_IMAGE as usize)?
+            .map(|bytes| format!("data:{mime};base64,{}", STANDARD.encode(bytes))))
+    })
+    .await
+}
+
 #[tauri::command]
 pub fn file_open(
     app: AppHandle,

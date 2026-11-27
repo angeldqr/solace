@@ -49,6 +49,8 @@ pub struct Task {
     pane: Option<PaneId>,
     branch: Option<String>,
     worktree: Option<PathBuf>,
+    /// The commit its worktree started from; `None` in a shared folder.
+    base: Option<String>,
     status: TaskStatus,
     summary: Option<String>,
     error: Option<String>,
@@ -68,6 +70,7 @@ pub struct TaskView {
     pane: Option<PaneId>,
     branch: Option<String>,
     worktree: Option<String>,
+    base: Option<String>,
     status: TaskStatus,
     /// What the agent in the pane is doing right now; `None` when no agent runs there.
     agent_state: Option<AgentState>,
@@ -116,6 +119,7 @@ fn task_view(s: &AppState, t: &Task) -> TaskView {
         pane: t.pane,
         branch: t.branch.clone(),
         worktree: t.worktree.as_deref().map(shown),
+        base: t.base.clone(),
         status: status_of(s, t),
         agent_state: t.pane.and_then(|p| agent_in(s, p)).map(|(_, state)| state),
         summary: t.summary.clone(),
@@ -363,6 +367,18 @@ pub fn start(
         }
     };
 
+    // Verified before anything is created; a shared folder has no commits to start from.
+    let mut bases: Vec<Option<String>> = Vec::new();
+    for spec in &specs {
+        bases.push(match (&top, &spec.base) {
+            (Some(top), Some(b)) => Some(git::resolve_commit(top, b, ctx.wsl)?),
+            (None, Some(_)) => {
+                return Err("a task base needs a git repository (not --shared)".into());
+            }
+            _ => base.clone(),
+        });
+    }
+
     // Git runs without the state lock: it can take a while on a big repository.
     let n = specs.len();
     let mut branches: Vec<Option<String>> = Vec::new();
@@ -371,7 +387,13 @@ pub fn start(
         for (i, spec) in specs.iter().enumerate() {
             let name = branch(&ctx.batch, i + 1, &spec.title);
             let rel = format!(".solace/worktrees/{}-{}", ctx.batch, i + 1);
-            if let Err(err) = git::worktree_add(top, &rel, &name, ctx.wsl) {
+            if let Err(err) = git::worktree_add(
+                top,
+                &rel,
+                &name,
+                bases[i].as_deref().unwrap_or("HEAD"),
+                ctx.wsl,
+            ) {
                 // No pane exists yet, so undoing the ones made is all there is to do. The failed
                 // one may have made its branch before failing.
                 let _ = git::branch_delete(top, &name, ctx.wsl);
@@ -419,6 +441,7 @@ pub fn start(
             pane,
             branch: branches[i].clone(),
             worktree: worktrees[i].clone(),
+            base: bases[i].clone(),
             status: if error.is_some() {
                 TaskStatus::Failed
             } else {
@@ -540,7 +563,7 @@ pub fn done(
             found.worktree.clone(),
             found.branch.clone(),
             batch.top.clone(),
-            batch.base.clone(),
+            found.base.clone(),
             batch.wsl,
         ))
     })?;

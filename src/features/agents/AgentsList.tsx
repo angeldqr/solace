@@ -5,9 +5,12 @@ import { api, type SessionView } from "../../shared/ipc";
 import { panesOf, useSession } from "../../shared/session";
 import { AgentIcon } from "../../shared/ui/AgentIcon";
 import { StatusDot } from "../../shared/ui/StatusDot";
+import { Tooltip } from "../../shared/ui/Tooltip";
 import { formatElapsed, useNow } from "../../shared/useNow";
 import { TaskBoard } from "../tasks/TaskBoard";
 import { useTasks } from "../tasks/tasks";
+import { Ring } from "../usage/UsageButton";
+import { compact, useUsage } from "../usage/usage";
 
 /** Most urgent first: what needs the user, then what just finished. */
 const GROUPS: { status: AgentStatus; title: MessageKey }[] = [
@@ -67,6 +70,7 @@ function AgentRow(props: {
   space?: string;
   elapsed: string;
 }) {
+  const ctx = useUsage((s) => s.view?.sessions.find((x) => x.pane === props.agent.pane));
   return (
     <button
       type="button"
@@ -77,6 +81,19 @@ function AgentRow(props: {
       <span className="truncate">{props.agent.label ?? props.agent.name}</span>
       {props.space && <span className="truncate text-fg-subtle text-xs">{props.space}</span>}
       <span className="ml-auto shrink-0 text-fg-subtle text-xs tabular-nums">{props.elapsed}</span>
+      {ctx?.percent != null && ctx.limit !== null && (
+        <Tooltip
+          label={
+            t("contextOf", { pct: Math.round(ctx.percent), limit: compact(ctx.limit) }) +
+            (ctx.model ? ` · ${ctx.model}` : "")
+          }
+        >
+          <span className="flex shrink-0 items-center gap-1 text-fg-subtle text-xs tabular-nums">
+            <Ring percent={ctx.percent} />
+            {Math.round(ctx.percent)}%
+          </span>
+        </Tooltip>
+      )}
       <StatusDot status={props.status} />
     </button>
   );

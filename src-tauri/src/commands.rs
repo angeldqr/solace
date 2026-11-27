@@ -112,6 +112,52 @@ pub fn tab_new(app: AppHandle, state: State<Shared>, space: SpaceId) -> Result {
     update(&app, &state, |s| s.new_tab(space).map(|_| Vec::new()))
 }
 
+/// Agents whose command is on PATH, as (id, name). A WSL shell has its own PATH that can't be
+/// checked from here, so every agent is offered then.
+fn installed_agents(wsl: bool, on_path: impl Fn(&str) -> bool) -> Vec<(String, String)> {
+    solace_core::agents::catalog()
+        .iter()
+        .filter(|a| wsl || a.command().is_some_and(&on_path))
+        .map(|a| (a.id.clone(), a.name.clone()))
+        .collect()
+}
+
+#[tauri::command]
+pub fn agents_installed(state: State<Shared>) -> Vec<(String, String)> {
+    let wsl = state
+        .lock()
+        .unwrap()
+        .settings
+        .shell
+        .as_ref()
+        .is_some_and(|s| s.to_string_lossy().to_lowercase().contains("wsl"));
+    installed_agents(wsl, solace_infra::system::on_path)
+}
+
+/// Opens a tab and starts the agent in it.
+#[tauri::command]
+pub fn tab_new_agent(app: AppHandle, state: State<Shared>, space: SpaceId, kind: String) -> Result {
+    let def = solace_core::agents::catalog()
+        .iter()
+        .find(|a| a.id == kind)
+        .ok_or_else(|| format!("unknown agent kind {kind:?}"))?;
+    let pane = {
+        let mut state = state.lock().unwrap();
+        let pane = state.session.new_tab(space).ok_or("not found")?;
+        if let Err(err) = spawn_shell(&app, &mut state, pane, 120, 32, None, None, &[]) {
+            eprintln!("could not start shell: {err}");
+        }
+        commit(&app, &state);
+        pane
+    };
+    std::thread::spawn(move || {
+        if let Err(err) = crate::orchestration::start_command(&app, pane, def, &|_| true) {
+            eprintln!("could not start {}: {err}", def.id);
+        }
+    });
+    Ok(())
+}
+
 #[tauri::command]
 pub fn tab_activate(app: AppHandle, state: State<Shared>, tab: TabId) -> Result {
     update(&app, &state, |s| none_closed(s.activate_tab(tab)))
@@ -279,5 +325,19 @@ pub fn pty_resize(state: State<Shared>, pane: PaneId, cols: u16, rows: u16) -> R
 pub fn pty_pause(state: State<Shared>, pane: PaneId, paused: bool) {
     if let Some(pty) = state.lock().unwrap().ptys.get(&pane) {
         pty.set_paused(paused);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::installed_agents;
+
+    #[test]
+    fn only_agents_on_path_are_offered_unless_wsl() {
+        let found = installed_agents(false, |c| c == "claude");
+        assert_eq!(found.len(), 1);
+        assert_eq!(found[0].0, "claude");
+        assert!(installed_agents(false, |_| false).is_empty());
+        assert!(installed_agents(true, |_| false).len() > 1);
     }
 }
