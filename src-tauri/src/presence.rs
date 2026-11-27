@@ -10,7 +10,7 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 
 /// The Discord application's public ID (Developer Portal). Empty disables the feature.
-const DISCORD_APP_ID: &str = "";
+const DISCORD_APP_ID: &str = "1575879170863399013";
 
 /// Discord rate-limits SET_ACTIVITY to roughly one per 15 seconds.
 const MIN_INTERVAL: Duration = Duration::from_secs(15);
