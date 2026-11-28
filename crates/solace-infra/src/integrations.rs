@@ -1,12 +1,15 @@
-//! Installs Solace's integration into Claude Code: hooks in `~/.claude/settings.json` that report
-//! the agent's exact state, and the skill that teaches it the `solace` CLI.
+//! Installs Solace's integration into the agent CLIs: hooks or a status line that report each
+//! agent's exact state (and context use), and the skill that teaches it the `solace` CLI.
+//! Claude Code: hooks and status line in `~/.claude/settings.json`. Codex: `~/.codex/hooks.json`.
+//! Kimi Code: `[[hooks]]` in `~/.kimi-code/config.toml`. Antigravity: its status line in
+//! `~/.gemini/antigravity-cli/settings.json`. OpenCode: only the skill; its screen is read.
 
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
 
 use serde_json::{Map, Value, json};
-use solace_core::agents::hooks::CLAUDE_EVENTS;
+use solace_core::agents::hooks::{CLAUDE_EVENTS, CODEX_EVENTS, KIMI_EVENTS};
 
 const SKILL: &str = include_str!("../../../skills/solace/SKILL.md");
 /// Marks hook commands as Solace's, so updates and uninstalls touch nothing else.
@@ -68,11 +71,19 @@ fn statusline_command(solace_exe: &Path, original: Option<&str>) -> String {
     }
 }
 
+/// How Antigravity's status line wraps the user's under cmd.exe, which has no `{ }` groups.
+const CMD_WRAP: &str = " --source solace-hook | ";
+
 /// `None`: not ours, or a wrapper the user edited beyond recognition (left alone). `Some(None)`:
 /// we created it. `Some(Some(orig))`: wrapped around the user's.
 fn original_statusline(command: &str) -> Option<Option<String>> {
     if !command.contains(MARKER) {
         return None;
+    }
+    if !command.contains(WRAP)
+        && let Some((_, orig)) = command.split_once(CMD_WRAP)
+    {
+        return Some(Some(orig.to_string()));
     }
     let Some((_, rest)) = command.split_once(WRAP) else {
         return Some(None);
@@ -181,13 +192,26 @@ fn write_settings(path: &Path, settings: &Map<String, Value>) -> io::Result<()> 
     crate::persist::save(path, settings)
 }
 
-pub fn install_claude(paths: &ClaudePaths, solace_exe: &Path) -> io::Result<()> {
-    if !solace_exe.is_file() {
-        return Err(io::Error::other(format!(
+fn check_exe(solace_exe: &Path) -> io::Result<()> {
+    if solace_exe.is_file() {
+        Ok(())
+    } else {
+        Err(io::Error::other(format!(
             "{} not found",
             solace_exe.display()
-        )));
+        )))
     }
+}
+
+fn write_skill(skill: &Path) -> io::Result<()> {
+    if let Some(dir) = skill.parent() {
+        fs::create_dir_all(dir)?;
+    }
+    fs::write(skill, SKILL)
+}
+
+pub fn install_claude(paths: &ClaudePaths, solace_exe: &Path) -> io::Result<()> {
+    check_exe(solace_exe)?;
     let mut settings = read_settings(&paths.settings)?;
     strip_ours(&mut settings);
     let hooks = settings
@@ -205,13 +229,8 @@ pub fn install_claude(paths: &ClaudePaths, solace_exe: &Path) -> io::Result<()> 
     }
     add_statusline(&mut settings, solace_exe);
     write_settings(&paths.settings, &settings)?;
-    for skill in [&paths.skill, &paths.agents_skill] {
-        if let Some(dir) = skill.parent() {
-            fs::create_dir_all(dir)?;
-        }
-        fs::write(skill, SKILL)?;
-    }
-    Ok(())
+    write_skill(&paths.skill)?;
+    write_skill(&paths.agents_skill)
 }
 
 /// Removes our SKILL.md, and its folder when nothing else is in it.
@@ -226,30 +245,293 @@ fn remove_skill(skill: &Path) -> io::Result<()> {
     Ok(())
 }
 
-pub fn uninstall_claude(paths: &ClaudePaths) -> io::Result<()> {
-    if paths.settings.exists() {
-        let mut settings = read_settings(&paths.settings)?;
+/// Takes Solace out of a JSON settings file, if the file is there.
+fn strip_file(path: &Path) -> io::Result<()> {
+    if path.exists() {
+        let mut settings = read_settings(path)?;
         strip_ours(&mut settings);
-        write_settings(&paths.settings, &settings)?;
+        write_settings(path, &settings)?;
     }
-    remove_skill(&paths.skill)?;
+    Ok(())
+}
+
+/// Claude's own pieces; the shared `~/.agents` skill is left to [`uninstall`].
+fn uninstall_claude_only(paths: &ClaudePaths) -> io::Result<()> {
+    strip_file(&paths.settings)?;
+    remove_skill(&paths.skill)
+}
+
+pub fn uninstall_claude(paths: &ClaudePaths) -> io::Result<()> {
+    uninstall_claude_only(paths)?;
     remove_skill(&paths.agents_skill)
 }
 
-pub fn claude_installed(paths: &ClaudePaths) -> bool {
-    read_settings(&paths.settings).is_ok_and(|settings| {
-        settings
-            .get("hooks")
-            .and_then(|h| h.get("Stop"))
-            .and_then(Value::as_array)
-            .is_some_and(|groups| {
-                groups.iter().any(|g| {
-                    g.get("hooks")
-                        .and_then(Value::as_array)
-                        .is_some_and(|l| l.iter().any(is_ours))
-                })
+/// Whether `hooks.<event>` holds one of our commands.
+fn has_our_hook(settings: &Map<String, Value>, event: &str) -> bool {
+    settings
+        .get("hooks")
+        .and_then(|h| h.get(event))
+        .and_then(Value::as_array)
+        .is_some_and(|groups| {
+            groups.iter().any(|g| {
+                g.get("hooks")
+                    .and_then(Value::as_array)
+                    .is_some_and(|l| l.iter().any(is_ours))
             })
-    })
+        })
+}
+
+pub fn claude_installed(paths: &ClaudePaths) -> bool {
+    read_settings(&paths.settings).is_ok_and(|settings| has_our_hook(&settings, "Stop"))
+}
+
+/// The CLIs Solace integrates with, by catalog id.
+pub const AGENTS: &[&str] = &["claude", "codex", "kimi", "antigravity", "opencode"];
+
+/// The path as cmd.exe runs it, unquoted (Codex and Kimi run hooks with `cmd /c`; quotes inside a
+/// command handed to cmd by Node or Go come out escaped and break it). Paths with spaces use
+/// their 8.3 short form, which has none.
+fn cmd_path(exe: &Path) -> String {
+    let path = exe.to_string_lossy();
+    let path = path.strip_prefix(r"\\?\").unwrap_or(&path).to_string();
+    if !path.contains(' ') {
+        return path;
+    }
+    #[cfg(windows)]
+    if let Some(short) = short_path(&path) {
+        return short;
+    }
+    format!("\"{path}\"")
+}
+
+#[cfg(windows)]
+fn short_path(path: &str) -> Option<String> {
+    use windows_sys::Win32::Storage::FileSystem::GetShortPathNameW;
+    let wide = widestring::U16CString::from_str(path).ok()?;
+    let mut buf = vec![0u16; 1024];
+    // SAFETY: both buffers are valid for the lengths passed.
+    let len = unsafe { GetShortPathNameW(wide.as_ptr(), buf.as_mut_ptr(), buf.len() as u32) };
+    let short = String::from_utf16(buf.get(..len as usize)?).ok()?;
+    (len > 0 && !short.contains(' ')).then_some(short)
+}
+
+/// `solace <args>` for the shell an agent runs commands in: cmd.exe on Windows, sh elsewhere.
+fn agent_command(solace_exe: &Path, args: &str) -> String {
+    if cfg!(windows) {
+        format!("{} {args}", cmd_path(solace_exe))
+    } else {
+        format!(
+            "{} {args} 2>/dev/null || true",
+            quote(bash_path(solace_exe))
+        )
+    }
+}
+
+fn codex_hooks(home: &Path) -> PathBuf {
+    home.join(".codex").join("hooks.json")
+}
+
+fn install_codex(home: &Path, solace_exe: &Path) -> io::Result<()> {
+    let path = codex_hooks(home);
+    let mut settings = read_settings(&path)?;
+    strip_ours(&mut settings);
+    let hooks = settings
+        .entry("hooks")
+        .or_insert_with(|| json!({}))
+        .as_object_mut()
+        .ok_or_else(|| io::Error::other("\"hooks\" in hooks.json is not an object"))?;
+    let args = format!("hook --agent codex --source {MARKER}");
+    let handler = json!({
+        "type": "command",
+        "command": format!("{} {args} 2>/dev/null || true", quote(bash_path(solace_exe))),
+        "commandWindows": format!("{} {args}", cmd_path(solace_exe)),
+        // Codex caps SessionEnd and Interrupt hooks at 3 s.
+        "timeout": 3,
+    });
+    for event in CODEX_EVENTS {
+        hooks
+            .entry(*event)
+            .or_insert_with(|| json!([]))
+            .as_array_mut()
+            .ok_or_else(|| io::Error::other(format!("hooks.{event} is not a list")))?
+            .push(json!({ "hooks": [handler.clone()] }));
+    }
+    write_settings(&path, &settings)
+}
+
+const KIMI_BEGIN: &str = "# >>> solace: added by Solace; removed when its Kimi integration is off";
+const KIMI_END: &str = "# <<< solace";
+
+fn kimi_config(home: &Path) -> PathBuf {
+    home.join(".kimi-code").join("config.toml")
+}
+
+/// The config without our block (and the blank line before it).
+fn strip_kimi(text: &str) -> String {
+    let Some(start) = text.find(KIMI_BEGIN) else {
+        return text.to_string();
+    };
+    let end = text[start..]
+        .find(KIMI_END)
+        .map_or(text.len(), |i| start + i + KIMI_END.len());
+    let rest = text[end..].strip_prefix('\n').unwrap_or(&text[end..]);
+    format!("{}{rest}", text[..start].trim_end_matches('\n'))
+        .trim_end()
+        .to_string()
+        + "\n"
+}
+
+fn install_kimi(home: &Path, solace_exe: &Path) -> io::Result<()> {
+    let path = kimi_config(home);
+    let current = match fs::read_to_string(&path) {
+        Ok(text) => text,
+        Err(err) if err.kind() == io::ErrorKind::NotFound => String::new(),
+        Err(err) => return Err(err),
+    };
+    let command = toml::Value::String(agent_command(
+        solace_exe,
+        &format!("hook --agent kimi --source {MARKER}"),
+    ));
+    let mut text = strip_kimi(&current);
+    text.push_str(&format!("\n{KIMI_BEGIN}\n"));
+    for event in KIMI_EVENTS {
+        text.push_str(&format!(
+            "[[hooks]]\nevent = \"{event}\"\ncommand = {command}\ntimeout = 5\n"
+        ));
+    }
+    text.push_str(KIMI_END);
+    text.push('\n');
+    // Never leave Kimi a config it can't load: the user's part must already be valid TOML.
+    text.parse::<toml::Table>()
+        .map_err(|e| io::Error::other(format!("{}: {e}", path.display())))?;
+    write_text(&path, &current, &text)
+}
+
+/// Writes a config the user also edits by hand, keeping one backup of their original.
+fn write_text(path: &Path, current: &str, text: &str) -> io::Result<()> {
+    if current == text {
+        return Ok(());
+    }
+    if let Some(dir) = path.parent() {
+        fs::create_dir_all(dir)?;
+    }
+    let backup = path.with_extension("toml.solace-backup");
+    if path.exists() && !backup.exists() {
+        fs::copy(path, &backup)?;
+    }
+    fs::write(path, text)
+}
+
+fn uninstall_kimi(home: &Path) -> io::Result<()> {
+    let path = kimi_config(home);
+    match fs::read_to_string(&path) {
+        Ok(text) if text.contains(KIMI_BEGIN) => write_text(&path, &text, &strip_kimi(&text)),
+        Ok(_) => Ok(()),
+        Err(err) if err.kind() == io::ErrorKind::NotFound => Ok(()),
+        Err(err) => Err(err),
+    }
+}
+
+fn agy_settings(home: &Path) -> PathBuf {
+    home.join(".gemini")
+        .join("antigravity-cli")
+        .join("settings.json")
+}
+
+fn agy_skill(home: &Path) -> PathBuf {
+    home.join(".gemini/config/skills/solace/SKILL.md")
+}
+
+/// Antigravity reruns its status line whenever the agent's state changes: the state and context
+/// use arrive through it. Ours prints nothing, so Antigravity's own status line stays.
+fn install_antigravity(home: &Path, solace_exe: &Path) -> io::Result<()> {
+    let path = agy_settings(home);
+    let mut settings = read_settings(&path)?;
+    strip_statusline(&mut settings);
+    let ours = |tee: &str| {
+        agent_command(
+            solace_exe,
+            &format!("statusline{tee} --agent antigravity --source {MARKER}"),
+        )
+    };
+    match settings.get_mut("statusLine") {
+        None => {
+            settings.insert(
+                "statusLine".into(),
+                json!({ "type": "command", "command": ours(""), "stack_with_default": true }),
+            );
+        }
+        Some(Value::Object(sl)) => {
+            if let Some(orig) = sl.get("command").and_then(Value::as_str) {
+                let wrapped = if cfg!(windows) {
+                    format!("{}{CMD_WRAP}{orig}", ours(" --tee"))
+                } else {
+                    statusline_command(solace_exe, Some(orig))
+                        .replace("--tee --source", "--tee --agent antigravity --source")
+                };
+                sl.insert("command".into(), Value::String(wrapped));
+            }
+        }
+        Some(_) => {}
+    }
+    write_settings(&path, &settings)?;
+    write_skill(&agy_skill(home))
+}
+
+fn opencode_skill(home: &Path) -> PathBuf {
+    home.join(".config/opencode/skills/solace/SKILL.md")
+}
+
+/// Installs one agent's integration; `agent` is a catalog id from [`AGENTS`].
+pub fn install(agent: &str, home: &Path, solace_exe: &Path) -> io::Result<()> {
+    check_exe(solace_exe)?;
+    let shared = home.join(".agents/skills/solace/SKILL.md");
+    match agent {
+        "claude" => install_claude(&ClaudePaths::in_home(home), solace_exe),
+        "codex" => install_codex(home, solace_exe).and_then(|()| write_skill(&shared)),
+        "kimi" => install_kimi(home, solace_exe).and_then(|()| write_skill(&shared)),
+        "antigravity" => install_antigravity(home, solace_exe),
+        "opencode" => write_skill(&opencode_skill(home)),
+        _ => Err(io::Error::other(format!("no integration for {agent}"))),
+    }
+}
+
+pub fn uninstall(agent: &str, home: &Path) -> io::Result<()> {
+    match agent {
+        "claude" => uninstall_claude_only(&ClaudePaths::in_home(home))?,
+        "codex" => strip_file(&codex_hooks(home))?,
+        "kimi" => uninstall_kimi(home)?,
+        "antigravity" => {
+            strip_file(&agy_settings(home))?;
+            remove_skill(&agy_skill(home))?;
+        }
+        "opencode" => remove_skill(&opencode_skill(home))?,
+        _ => return Err(io::Error::other(format!("no integration for {agent}"))),
+    }
+    // Claude, Codex and Kimi share this copy; it goes with the last of them.
+    if !["claude", "codex", "kimi"]
+        .iter()
+        .any(|a| installed(a, home))
+    {
+        remove_skill(&home.join(".agents/skills/solace/SKILL.md"))?;
+    }
+    Ok(())
+}
+
+pub fn installed(agent: &str, home: &Path) -> bool {
+    match agent {
+        "claude" => claude_installed(&ClaudePaths::in_home(home)),
+        "codex" => read_settings(&codex_hooks(home)).is_ok_and(|s| has_our_hook(&s, "Stop")),
+        "kimi" => fs::read_to_string(kimi_config(home)).is_ok_and(|t| t.contains(KIMI_BEGIN)),
+        "antigravity" => read_settings(&agy_settings(home)).is_ok_and(|s| {
+            s.get("statusLine")
+                .and_then(|sl| sl.get("command"))
+                .and_then(Value::as_str)
+                .is_some_and(|c| c.contains(MARKER))
+        }),
+        "opencode" => opencode_skill(home).is_file(),
+        _ => false,
+    }
 }
 
 #[cfg(test)]
@@ -384,6 +666,102 @@ mod tests {
         );
 
         assert_eq!(original_statusline("echo hi"), None);
+        fs::remove_dir_all(&home).unwrap();
+    }
+
+    #[test]
+    fn other_agents_install_and_uninstall_cleanly() {
+        let home = std::env::temp_dir().join(format!("solace-agents-test-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&home);
+        fs::create_dir_all(home.join(".kimi-code")).unwrap();
+        let kimi_mine = "# mine\ndefault_model = \"k2\"\n\n[ui]\ncolor = true\n";
+        fs::write(kimi_config(&home), kimi_mine).unwrap();
+        fs::create_dir_all(agy_settings(&home).parent().unwrap()).unwrap();
+        let agy_mine =
+            json!({ "model": "g", "statusLine": { "type": "command", "command": "my-line" } });
+        fs::write(agy_settings(&home), agy_mine.to_string()).unwrap();
+        let exe = &home.join("solace.exe");
+        fs::write(exe, "").unwrap();
+
+        for agent in AGENTS {
+            install(agent, &home, exe).unwrap();
+            install(agent, &home, exe).unwrap();
+            assert!(installed(agent, &home), "{agent}");
+        }
+        let codex = read_settings(&codex_hooks(&home)).unwrap();
+        let stop = codex["hooks"]["Stop"].as_array().unwrap();
+        assert_eq!(stop.len(), 1, "installed once");
+        assert!(
+            stop[0]["hooks"][0]["commandWindows"]
+                .as_str()
+                .unwrap()
+                .contains("--agent codex")
+        );
+        let kimi = fs::read_to_string(kimi_config(&home)).unwrap();
+        assert_eq!(kimi.matches(KIMI_BEGIN).count(), 1);
+        let parsed: toml::Table = kimi.parse().unwrap();
+        assert_eq!(parsed["hooks"].as_array().unwrap().len(), KIMI_EVENTS.len());
+        assert_eq!(parsed["ui"]["color"].as_bool(), Some(true));
+        let agy = read_settings(&agy_settings(&home)).unwrap();
+        let line = agy["statusLine"]["command"].as_str().unwrap();
+        assert!(line.contains("--agent antigravity") && line.ends_with("my-line"));
+        assert!(home.join(".agents/skills/solace/SKILL.md").exists());
+
+        // The shared skill stays while any agent that reads it is still integrated.
+        uninstall("codex", &home).unwrap();
+        uninstall("kimi", &home).unwrap();
+        assert!(home.join(".agents/skills/solace/SKILL.md").exists());
+        for agent in AGENTS {
+            uninstall(agent, &home).unwrap();
+            assert!(!installed(agent, &home), "{agent}");
+        }
+        assert!(!home.join(".agents/skills/solace/SKILL.md").exists());
+        assert_eq!(fs::read_to_string(kimi_config(&home)).unwrap(), kimi_mine);
+        assert_eq!(read_settings(&agy_settings(&home)).unwrap(), {
+            let Value::Object(m) = agy_mine else {
+                unreachable!()
+            };
+            m
+        });
+        assert!(
+            read_settings(&codex_hooks(&home))
+                .unwrap()
+                .get("hooks")
+                .is_none()
+        );
+        fs::remove_dir_all(&home).unwrap();
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn cmd_path_has_no_spaces_for_cmd_exe() {
+        let dir = std::env::temp_dir().join(format!("solace cmd {}", std::process::id()));
+        fs::create_dir_all(&dir).unwrap();
+        let exe = dir.join("solace.exe");
+        fs::write(&exe, "").unwrap();
+        let path = cmd_path(&exe);
+        // The 8.3 name when the volume has them, else quoted (cmd /c strips the outer quotes).
+        let ok = if path.starts_with('"') {
+            Path::new(path.trim_matches('"')).is_file()
+        } else {
+            !path.contains(' ') && Path::new(&path).is_file()
+        };
+        assert!(ok, "{path}");
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn kimi_refuses_a_config_it_cannot_parse() {
+        let home = std::env::temp_dir().join(format!("solace-kimi-bad-{}", std::process::id()));
+        fs::create_dir_all(home.join(".kimi-code")).unwrap();
+        fs::write(kimi_config(&home), "not = [toml").unwrap();
+        let exe = &home.join("solace.exe");
+        fs::write(exe, "").unwrap();
+        assert!(install("kimi", &home, exe).is_err());
+        assert_eq!(
+            fs::read_to_string(kimi_config(&home)).unwrap(),
+            "not = [toml"
+        );
         fs::remove_dir_all(&home).unwrap();
     }
 

@@ -115,11 +115,14 @@ pub enum Request {
         #[serde(default)]
         no_changes: bool,
     },
-    /// From Claude Code's status line: the raw status JSON, which carries the rate limits.
+    /// From an agent's status line (Claude Code's carries the rate limits): the raw status JSON.
     #[serde(rename = "usage.report")]
     UsageReport {
         pane: Option<PaneId>,
         status: serde_json::Value,
+        /// The agent whose status line this is; `None` (older CLIs) means Claude Code.
+        #[serde(default)]
+        agent: Option<String>,
     },
 }
 
@@ -141,6 +144,7 @@ mod tests {
         let report = Request::UsageReport {
             pane: Some(PaneId(3)),
             status: serde_json::json!({"a": 1}),
+            agent: None,
         };
         let back: Request = serde_json::from_str(&serde_json::to_string(&report).unwrap()).unwrap();
         assert!(matches!(

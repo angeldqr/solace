@@ -5,7 +5,7 @@ use std::process::ExitCode;
 use clap::{Parser, Subcommand};
 #[cfg(unix)]
 use interprocess::local_socket::{Stream, prelude::*};
-use solace_core::agents::hooks::{HookVerdict, claude_hook};
+use solace_core::agents::hooks::{HookVerdict, agent_hook, antigravity_state};
 use solace_core::orchestration::{Envelope, Request, Response};
 use solace_core::tasks::TaskSpec;
 use solace_core::terminals::{Direction, PaneId};
@@ -375,6 +375,16 @@ fn install_skill() -> Result<serde_json::Value, String> {
 
 /// Hooks must never get in Claude Code's way: outside Solace, or on any error, this does nothing
 /// and exits 0 with no output (a hook's output can reach the model).
+/// The value after `--agent`; hooks and status lines installed before it existed are Claude's.
+fn agent_arg() -> String {
+    let args: Vec<String> = std::env::args().collect();
+    args.iter()
+        .position(|a| a == "--agent")
+        .and_then(|i| args.get(i + 1))
+        .cloned()
+        .unwrap_or_else(|| "claude".into())
+}
+
 fn hook() -> ExitCode {
     let mut input = String::new();
     let _ = std::io::stdin()
@@ -388,16 +398,19 @@ fn hook() -> ExitCode {
     ) else {
         return ExitCode::SUCCESS;
     };
-    let state = match claude_hook(&event) {
+    let agent = agent_arg();
+    let state = match agent_hook(&agent, &event) {
         HookVerdict::Report(state) => Some(state),
         HookVerdict::Clear => None,
         HookVerdict::Ignore => return ExitCode::SUCCESS,
     };
-    let session = event
-        .get("session_id")
-        .and_then(serde_json::Value::as_str)
-        .unwrap_or_default()
-        .to_string();
+    // The session only tells a nested `claude -p` apart; other CLIs start new sessions (/new)
+    // inside the same agent, and their reports must keep counting.
+    let session = match agent.as_str() {
+        "claude" => event.get("session_id").and_then(serde_json::Value::as_str),
+        _ => None,
+    };
+    let session = session.unwrap_or_default().to_string();
     let _ = call(Request::AgentReport {
         pane,
         session,
@@ -406,8 +419,9 @@ fn hook() -> ExitCode {
     ExitCode::SUCCESS
 }
 
-/// Claude Code's status line: always exits 0 and prints nothing but the `--tee` passthrough.
+/// An agent's status line: always exits 0 and prints nothing but the `--tee` passthrough.
 fn statusline(tee: bool) -> ExitCode {
+    let agent = agent_arg();
     let mut input = Vec::new();
     let _ = std::io::stdin().take(1024 * 1024).read_to_end(&mut input);
     if tee {
@@ -418,9 +432,20 @@ fn statusline(tee: bool) -> ExitCode {
     if let Ok(status) = serde_json::from_slice::<serde_json::Value>(&input) {
         let (sender, done) = std::sync::mpsc::channel();
         std::thread::spawn(move || {
+            // Antigravity has no hook for permission prompts; its status line tells instead.
+            if agent == "antigravity"
+                && let (Some(pane), Some(state)) = (caller_pane(), antigravity_state(&status))
+            {
+                let _ = call(Request::AgentReport {
+                    pane,
+                    session: String::new(),
+                    state: Some(state),
+                });
+            }
             let _ = call(Request::UsageReport {
                 pane: caller_pane(),
                 status,
+                agent: Some(agent),
             });
             let _ = sender.send(());
         });
@@ -433,9 +458,9 @@ fn statusline(tee: bool) -> ExitCode {
 /// Run by the uninstaller: takes Solace's hooks and skill out of the agents' configs. Never fails
 /// the uninstall, and prints nothing.
 fn remove_integration(home: &std::path::Path) {
-    let _ = solace_infra::integrations::uninstall_claude(
-        &solace_infra::integrations::ClaudePaths::in_home(home),
-    );
+    for agent in solace_infra::integrations::AGENTS {
+        let _ = solace_infra::integrations::uninstall(agent, home);
+    }
 }
 
 fn main() -> ExitCode {

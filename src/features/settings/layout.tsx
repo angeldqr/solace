@@ -34,7 +34,7 @@ export function Row({
   children,
   htmlFor,
 }: {
-  title: string;
+  title: ReactNode;
   description?: string;
   children: ReactNode;
   htmlFor?: string;

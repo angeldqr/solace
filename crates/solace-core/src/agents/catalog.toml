@@ -115,6 +115,7 @@ regex = '(?i)esc to cancel'
 id = "kimi"
 name = "Kimi Code"
 executables = ["kimi", "kimi-code"]
+packages = ["@moonshot-ai/kimi-code"]
 
 [[agent.rule]]
 state = "blocked"

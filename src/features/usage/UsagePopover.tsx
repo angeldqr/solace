@@ -148,7 +148,10 @@ export function UsagePopover({
   const now = useNow(30_000);
   const [integration, setIntegration] = useState(true);
   useEffect(() => {
-    void api.claudeIntegrationInstalled().then(setIntegration, () => {});
+    void api.integrationsInstalled().then(
+      (l) => setIntegration(l.includes("claude")),
+      () => {},
+    );
   }, []);
 
   // A provider not used for a week (an old Codex session, say) is noise, not usage.

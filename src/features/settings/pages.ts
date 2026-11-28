@@ -79,7 +79,7 @@ export const PAGES: { id: PageId; title: MessageKey; keywords: MessageKey[] }[] 
   {
     id: "agents",
     title: "agents",
-    keywords: ["claudeIntegration", "claudeIntegrationHint"],
+    keywords: ["integrationsIntro", "integration_claude", "integration_codex", "integration_kimi"],
   },
   { id: "shell", title: "shell", keywords: ["shellForNewTerminals", "shellDefault"] },
   {

@@ -144,7 +144,7 @@ pub fn run() {
             let handle = app.handle().clone();
             std::thread::spawn(move || usage::watch(handle));
             let handle = app.handle().clone();
-            std::thread::spawn(move || settings::refresh_claude_integration(&handle));
+            std::thread::spawn(move || settings::refresh_integrations(&handle));
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -185,8 +185,8 @@ pub fn run() {
             settings::notifications_set,
             settings::locale_set,
             settings::system_toasts_enabled,
-            settings::claude_integration_installed,
-            settings::claude_integration_set,
+            settings::integrations_installed,
+            settings::integration_set,
             settings::open_log_dir,
         ])
         .build(tauri::generate_context!())

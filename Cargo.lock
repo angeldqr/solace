@@ -4238,6 +4238,7 @@ dependencies = [
  "serde_json",
  "solace-core",
  "sysinfo",
+ "toml 1.2.3+spec-1.1.0",
  "vt100",
  "which",
  "widestring",

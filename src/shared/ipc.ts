@@ -101,8 +101,9 @@ export const api = {
   notificationsSet: (enabled: boolean) => invoke("notifications_set", { enabled }),
   localeSet: (locale: string) => invoke("locale_set", { locale }),
   systemToastsEnabled: () => invoke<boolean>("system_toasts_enabled"),
-  claudeIntegrationInstalled: () => invoke<boolean>("claude_integration_installed"),
-  claudeIntegrationSet: (enabled: boolean) => invoke("claude_integration_set", { enabled }),
+  integrationsInstalled: () => invoke<string[]>("integrations_installed"),
+  integrationSet: (agent: string, enabled: boolean) =>
+    invoke("integration_set", { agent, enabled }),
   usageGet: () => invoke<UsageView>("usage_get"),
   presenceAvailable: () => invoke<boolean>("presence_available"),
   presenceStatus: () => invoke<number>("presence_status"),

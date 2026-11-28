@@ -140,9 +140,21 @@ const en = {
   updateReady: "version {version} ready, restart to update",
   notifications: "Notifications",
   checkUpdates: "Check for updates automatically",
-  claudeIntegration: "Claude Code integration",
-  claudeIntegrationHint:
-    "Adds hooks to ~/.claude/settings.json so Claude Code reports its exact state, installs the skill that teaches it the solace command, and reads your rate limits through the Claude status line. Your own hooks and status line are kept intact, and a backup of the file is made first.",
+  integrationsIntro:
+    "Lets each CLI tell Solace exactly what it is doing (working, needs you, done) and how full its context is, and installs the skill that teaches it the solace command. Your own settings are kept and a backup is made before the first change.",
+  integrationOf: "{name} integration",
+  integrationNotFound: "not found on PATH",
+  integration_claude:
+    "Hooks and status line in ~/.claude/settings.json: exact state, context, and your 5-hour and weekly limits.",
+  integration_codex:
+    "Hooks in ~/.codex/hooks.json: exact state, including when Codex asks for approval.",
+  integration_antigravity:
+    "Status line in ~/.gemini/antigravity-cli/settings.json (yours keeps showing): exact state and context. Skill in ~/.gemini/config/skills.",
+  integration_kimi: "Hooks in ~/.kimi-code/config.toml: exact state, including approval prompts.",
+  integration_opencode:
+    "Skill in ~/.config/opencode/skills. OpenCode's state and context are read from its screen.",
+  integrationCodexTrust:
+    "Codex runs new hooks only after you approve them: open Codex and type /hooks once.",
   privacyNote:
     "Solace sends no usage data. Its only requests are to GitHub, to check for and download updates.",
   notifyAgents: "Notify me when an agent I'm not watching needs me or finishes",
@@ -405,9 +417,22 @@ const es: Messages = {
   updateReady: "versión {version} lista, reinicia para actualizar",
   notifications: "Notificaciones",
   checkUpdates: "Buscar actualizaciones automáticamente",
-  claudeIntegration: "Integración con Claude Code",
-  claudeIntegrationHint:
-    "Agrega hooks en ~/.claude/settings.json para que Claude Code informe su estado exacto, instala el skill que le enseña el comando solace y lee tus límites de uso a través de la línea de estado de Claude. Tus hooks y tu línea de estado se conservan intactos y antes se guarda una copia del archivo.",
+  integrationsIntro:
+    "Permite que cada CLI le diga a Solace exactamente qué está haciendo (trabajando, te necesita, listo) y cuánto contexto lleva, e instala la skill que le enseña el comando solace. Tu configuración se conserva y antes del primer cambio se guarda una copia.",
+  integrationOf: "Integración con {name}",
+  integrationNotFound: "no está en el PATH",
+  integration_claude:
+    "Hooks y línea de estado en ~/.claude/settings.json: estado exacto, contexto y tus límites de 5 horas y semanal.",
+  integration_codex:
+    "Hooks en ~/.codex/hooks.json: estado exacto, incluido cuando Codex pide aprobación.",
+  integration_antigravity:
+    "Línea de estado en ~/.gemini/antigravity-cli/settings.json (la tuya se sigue viendo): estado exacto y contexto. Skill en ~/.gemini/config/skills.",
+  integration_kimi:
+    "Hooks en ~/.kimi-code/config.toml: estado exacto, incluidos los permisos que pide.",
+  integration_opencode:
+    "Skill en ~/.config/opencode/skills. El estado y el contexto de OpenCode se leen de su pantalla.",
+  integrationCodexTrust:
+    "Codex solo ejecuta hooks nuevos cuando los apruebas: abre Codex y escribe /hooks una vez.",
   privacyNote:
     "Solace no envía datos de uso. Solo se conecta a GitHub para buscar y descargar actualizaciones.",
   notifyAgents: "Avisarme cuando un agente que no estoy mirando me necesite o termine",

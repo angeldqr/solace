@@ -82,13 +82,11 @@ pub fn system_toasts_enabled() -> bool {
     solace_infra::system::toasts_enabled()
 }
 
-fn claude_paths() -> Result<solace_infra::integrations::ClaudePaths, String> {
-    let home = std::env::var_os("USERPROFILE")
+fn home() -> Result<PathBuf, String> {
+    std::env::var_os("USERPROFILE")
         .or_else(|| std::env::var_os("HOME"))
-        .ok_or("no home directory")?;
-    Ok(solace_infra::integrations::ClaudePaths::in_home(
-        std::path::Path::new(&home),
-    ))
+        .map(PathBuf::from)
+        .ok_or_else(|| "no home directory".into())
 }
 
 /// Opens the folder holding Solace's log file in the file manager.
@@ -103,11 +101,15 @@ pub fn open_log_dir(app: tauri::AppHandle) -> Result<(), String> {
         .map_err(|e| e.to_string())
 }
 
+/// Which agent CLIs have Solace's integration installed, by catalog id.
 #[tauri::command(async)]
-pub fn claude_integration_installed() -> Result<bool, String> {
-    Ok(solace_infra::integrations::claude_installed(
-        &claude_paths()?
-    ))
+pub fn integrations_installed() -> Result<Vec<String>, String> {
+    let home = home()?;
+    Ok(solace_infra::integrations::AGENTS
+        .iter()
+        .filter(|a| solace_infra::integrations::installed(a, &home))
+        .map(|a| a.to_string())
+        .collect())
 }
 
 /// The `solace` CLI shipped with this app; hooks point at it so they survive updates.
@@ -152,28 +154,28 @@ fn hook_cli(app: &tauri::AppHandle) -> Result<PathBuf, String> {
 }
 
 #[tauri::command(async)]
-pub fn claude_integration_set(app: tauri::AppHandle, enabled: bool) -> Result<(), String> {
-    let paths = claude_paths()?;
+pub fn integration_set(app: tauri::AppHandle, agent: String, enabled: bool) -> Result<(), String> {
+    let home = home()?;
     let result = if enabled {
-        solace_infra::integrations::install_claude(&paths, &hook_cli(&app)?)
+        solace_infra::integrations::install(&agent, &home, &hook_cli(&app)?)
     } else {
-        solace_infra::integrations::uninstall_claude(&paths)
+        solace_infra::integrations::uninstall(&agent, &home)
     };
     result.map_err(|e| e.to_string())
 }
 
 /// Re-points installed hooks at this copy of Solace (it may have moved) and refreshes the skill.
 /// Release builds only: a dev build must not aim the user's hooks at `target/`.
-pub fn refresh_claude_integration(app: &tauri::AppHandle) {
+pub fn refresh_integrations(app: &tauri::AppHandle) {
     if cfg!(debug_assertions) {
         return;
     }
-    let Ok(paths) = claude_paths() else {
+    let (Ok(home), Ok(exe)) = (home(), hook_cli(app)) else {
         return;
     };
-    if solace_infra::integrations::claude_installed(&paths)
-        && let Ok(exe) = hook_cli(app)
-    {
-        let _ = solace_infra::integrations::install_claude(&paths, &exe);
+    for agent in solace_infra::integrations::AGENTS {
+        if solace_infra::integrations::installed(agent, &home) {
+            let _ = solace_infra::integrations::install(agent, &home, &exe);
+        }
     }
 }

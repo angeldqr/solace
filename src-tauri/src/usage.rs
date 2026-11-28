@@ -11,7 +11,8 @@ use serde_json::Value;
 use solace_core::agents::ScreenContext;
 use solace_core::terminals::PaneId;
 use solace_core::usage::{
-    ClaudeSession, ContextUse, Limit, ProviderUsage, Tokens, parse_claude_status,
+    ClaudeSession, ContextUse, Limit, ProviderUsage, Tokens, parse_agent_status,
+    parse_claude_status,
 };
 use solace_infra::usage::{ClaudeLog, CodexCache, CodexContext};
 use tauri::{AppHandle, Emitter, Manager, State};
@@ -27,7 +28,8 @@ const FIVE_HOURS: u64 = 5 * 3600;
 pub struct UsageState {
     claude: Option<ProviderUsage>,
     codex: Option<ProviderUsage>,
-    sessions: HashMap<PaneId, ClaudeSession>,
+    /// From status lines: (agent id, session).
+    sessions: HashMap<PaneId, (String, ClaudeSession)>,
     /// Context of the Codex panes read from its rollouts: (agent id, context).
     contexts: HashMap<PaneId, (String, ContextUse)>,
     /// Context an agent prints on its own screen, kept while the agent runs.
@@ -123,9 +125,9 @@ fn home_dir(var: &str, default: &str) -> Option<PathBuf> {
 
 /// Panes of closed terminals drop out here, so a finished session never lingers.
 pub fn view(state: &AppState) -> UsageView {
-    let claude = state.usage.sessions.iter().map(|(pane, s)| {
+    let claude = state.usage.sessions.iter().map(|(pane, (agent, s))| {
         let (model, cost) = (s.model.clone(), s.cost_usd);
-        let session = SessionUsage::new(*pane, "claude", model, cost, s.context.as_ref());
+        let session = SessionUsage::new(*pane, agent, model, cost, s.context.as_ref());
         // The status line knows nothing right after /compact; /context on screen fills the gap.
         match (&s.context, state.usage.screens.get(pane)) {
             (None, Some(screen)) => session.with_screen(screen),
@@ -214,9 +216,14 @@ fn merge(
     true
 }
 
-/// A `solace statusline` report from a Claude Code pane.
-pub fn report(app: &AppHandle, pane: Option<PaneId>, status: &Value) {
-    let (limits, session) = parse_claude_status(status);
+/// A `solace statusline` report from an agent's pane; only Claude's carries rate limits.
+pub fn report(app: &AppHandle, pane: Option<PaneId>, agent: &str, status: &Value) {
+    let (limits, session) = if agent == "claude" {
+        parse_claude_status(status)
+    } else {
+        (None, parse_agent_status(agent, status))
+    };
+    let session = (agent.to_string(), session);
     let state = app.state::<Shared>();
     let mut state = state.lock().unwrap();
     let mut changed = merge(&mut state.usage.claude, limits, None, now_secs() * 1000);
@@ -229,8 +236,8 @@ pub fn report(app: &AppHandle, pane: Option<PaneId>, status: &Value) {
             .usage
             .sessions
             .get(&pane)
-            .is_some_and(|s| s.context.is_some());
-        if session.context.is_some() || knew {
+            .is_some_and(|(_, s)| s.context.is_some());
+        if session.1.context.is_some() || knew {
             state.usage.screens.remove(&pane);
         }
         state.usage.sessions.insert(pane, session);

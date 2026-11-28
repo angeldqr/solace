@@ -232,8 +232,12 @@ fn dispatch(app: &AppHandle, request: Request, caller: &Caller) -> Response {
             failed,
             no_changes,
         } => crate::tasks::done(app, &task, pane, &summary, failed, no_changes),
-        Request::UsageReport { pane, status } => {
-            crate::usage::report(app, pane, &status);
+        Request::UsageReport {
+            pane,
+            status,
+            agent,
+        } => {
+            crate::usage::report(app, pane, agent.as_deref().unwrap_or("claude"), &status);
             Ok(json!({}))
         }
     }

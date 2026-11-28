@@ -155,6 +155,31 @@ fn claude_context(status: &Value) -> Option<ContextUse> {
     })
 }
 
+/// The session an agent's status line describes. Antigravity sends the same `context_window` and
+/// `model` as Claude Code; Kimi Code sends its own camelCase snapshot.
+pub fn parse_agent_status(agent: &str, status: &Value) -> ClaudeSession {
+    if agent != "kimi" {
+        return parse_claude_status(status).1;
+    }
+    let n = |k: &str| status.get(k).and_then(Value::as_u64);
+    let context = match (n("contextTokens"), n("maxContextTokens")) {
+        (Some(used), limit) if used > 0 => Some(ContextUse {
+            used,
+            limit: limit.filter(|l| *l > 0),
+            model: None,
+        }),
+        _ => None,
+    };
+    ClaudeSession {
+        model: status
+            .get("model")
+            .and_then(Value::as_str)
+            .map(str::to_string),
+        cost_usd: None,
+        context,
+    }
+}
+
 /// A Codex `token_count` event carrying `info`: the last request's input is the context held.
 pub fn parse_codex_context(line: &str) -> Option<ContextUse> {
     if !line.contains("token_count") {
@@ -344,6 +369,23 @@ mod tests {
         let (_, s) = parse_claude_status(&json!({"context_window": {
             "context_window_size": 1000, "current_usage": {"input_tokens": 100, "cache_read_input_tokens": 150}}}));
         assert_eq!(s.context.unwrap().used, 250);
+        let kimi = parse_agent_status(
+            "kimi",
+            &json!({"model": "K3", "contextTokens": 5000, "maxContextTokens": 256000}),
+        );
+        assert_eq!(kimi.model.as_deref(), Some("K3"));
+        assert_eq!(kimi.context.unwrap().limit, Some(256000));
+        assert_eq!(
+            parse_agent_status("kimi", &json!({"contextTokens": 0})).context,
+            None
+        );
+        let agy = parse_agent_status(
+            "antigravity",
+            &json!({"model": {"display_name": "Gemini"}, "context_window": {
+                "used_percentage": 10, "context_window_size": 1000,
+                "current_usage": {"input_tokens": 100}}}),
+        );
+        assert_eq!(agy.context.unwrap().used, 100);
         // After /compact: no usage until the next response, whatever the percentage says.
         for cur in [
             json!(null),
