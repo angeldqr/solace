@@ -81,12 +81,19 @@ fn next_send_at(last_sent: Option<Instant>, now: Instant) -> Instant {
     last_sent.map_or(now, |last| (last + MIN_INTERVAL).max(now))
 }
 
+/// Discord proxies any https image here. An uploaded art asset is cached by its key, so a new logo
+/// never showed; the version in the query busts the proxy's cache on each release.
+const LOGO_URL: &str = concat!(
+    "https://raw.githubusercontent.com/angeldqr/solace/main/assets/discord/solace.png?v=",
+    env!("CARGO_PKG_VERSION")
+);
+
 fn cap(s: &str) -> String {
     s.chars().take(MAX_FIELD).collect()
 }
 
 fn activity_json(a: &PresenceActivity, start: u64) -> Value {
-    let mut assets = json!({ "large_image": "solace", "large_text": "Solace" });
+    let mut assets = json!({ "large_image": LOGO_URL, "large_text": "Solace" });
     if let Some(image) = a.small_image.as_deref().filter(|s| !s.is_empty()) {
         assets["small_image"] = json!(cap(image));
         if let Some(text) = &a.small_text {
@@ -367,7 +374,7 @@ mod tests {
                 "state": "3 agents working",
                 "timestamps": { "start": 42 },
                 "assets": {
-                    "large_image": "solace",
+                    "large_image": LOGO_URL,
                     "large_text": "Solace",
                     "small_image": "claude",
                     "small_text": "Claude Code"

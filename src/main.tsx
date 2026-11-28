@@ -8,6 +8,7 @@ import { createRoot } from "react-dom/client";
 import { App } from "./app/App";
 import { ErrorBoundary } from "./app/ErrorBoundary";
 import { startFileEvents } from "./features/files/panel";
+import { startSounds } from "./features/notify/sound";
 import { startPresence } from "./features/presence/presence";
 import { applyAppearance, useSettings, useSystemDark } from "./features/settings/settings";
 import { startTasks } from "./features/tasks/tasks";
@@ -40,6 +41,7 @@ void startAgents();
 void startTasks();
 startUpdates();
 startPresence();
+startSounds();
 void startFileEvents(() => current().space?.id);
 
 const root = document.getElementById("root");

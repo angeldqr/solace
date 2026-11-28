@@ -26,6 +26,7 @@ const en = {
   usageSessions: "Active sessions",
   usageContext: "Context used",
   contextOf: "Context: {pct}% of {limit}",
+  contextPending: "Context: unknown until the agent's next reply (or run /context)",
   startTitle: "Start with a folder",
   startBody: "Each folder becomes a space with its own terminals and agents.",
   noTerminals: "No terminals open",
@@ -145,6 +146,10 @@ const en = {
   privacyNote:
     "Solace sends no usage data. Its only requests are to GitHub, to check for and download updates.",
   notifyAgents: "Notify me when an agent I'm not watching needs me or finishes",
+  soundNeedsYou: "Play a sound when an agent needs me",
+  soundFinished: "Play a sound when an agent finishes",
+  soundVolume: "Sound volume",
+  soundTest: "Test",
   systemToastsOff:
     "Windows notifications are turned off (Settings > System > Notifications). Solace will still flash its taskbar button when an agent needs you.",
   general: "General",
@@ -285,6 +290,7 @@ const es: Messages = {
   usageSessions: "Sesiones activas",
   usageContext: "Contexto usado",
   contextOf: "Contexto: {pct}% de {limit}",
+  contextPending: "Contexto: se sabrá con la próxima respuesta del agente (o ejecuta /context)",
   startTitle: "Empieza con una carpeta",
   startBody: "Cada carpeta se convierte en un espacio con sus propias terminales y agentes.",
   noTerminals: "No hay terminales abiertas",
@@ -405,6 +411,10 @@ const es: Messages = {
   privacyNote:
     "Solace no envía datos de uso. Solo se conecta a GitHub para buscar y descargar actualizaciones.",
   notifyAgents: "Avisarme cuando un agente que no estoy mirando me necesite o termine",
+  soundNeedsYou: "Sonar cuando un agente me necesite",
+  soundFinished: "Sonar cuando un agente termine",
+  soundVolume: "Volumen del sonido",
+  soundTest: "Probar",
   systemToastsOff:
     "Las notificaciones de Windows están desactivadas (Configuración > Sistema > Notificaciones). Aun así, Solace hará parpadear su botón en la barra de tareas cuando un agente te necesite.",
   general: "General",

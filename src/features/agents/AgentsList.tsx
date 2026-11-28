@@ -95,6 +95,11 @@ function AgentRow(props: {
           </span>
         </Tooltip>
       )}
+      {ctx && ctx.percent === null && (
+        <Tooltip label={t("contextPending")}>
+          <span className="shrink-0 text-fg-subtle text-xs">—</span>
+        </Tooltip>
+      )}
       <StatusDot status={props.status} />
     </button>
   );

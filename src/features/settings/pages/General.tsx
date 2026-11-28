@@ -1,8 +1,11 @@
 import { useEffect, useState } from "react";
 import { type MessageKey, t } from "../../../shared/i18n";
 import { api } from "../../../shared/ipc";
+import { Button } from "../../../shared/ui/Button";
 import { Select } from "../../../shared/ui/Select";
+import { Slider } from "../../../shared/ui/Slider";
 import { Switch } from "../../../shared/ui/Switch";
+import { playChime } from "../../notify/sound";
 import { Card, Hint, Row, Section } from "../layout";
 import { flushSettings, type Language, updateSettings, useSettings } from "../settings";
 
@@ -92,6 +95,9 @@ function Presence() {
 }
 
 function Notifications() {
+  const needsYou = useSettings((s) => s.soundNeedsYou);
+  const finished = useSettings((s) => s.soundFinished);
+  const volume = useSettings((s) => s.soundVolume);
   const [enabled, setEnabled] = useState<boolean | null>(null);
   const [systemOn, setSystemOn] = useState(true);
   useEffect(() => {
@@ -111,6 +117,36 @@ function Notifications() {
               void api.notificationsSet(value);
             }}
           />
+        </Row>
+        <Row title={t("soundNeedsYou")}>
+          <Switch
+            checked={needsYou}
+            label={t("soundNeedsYou")}
+            onCheckedChange={(value) => updateSettings({ soundNeedsYou: value })}
+          />
+        </Row>
+        <Row title={t("soundFinished")}>
+          <Switch
+            checked={finished}
+            label={t("soundFinished")}
+            onCheckedChange={(value) => updateSettings({ soundFinished: value })}
+          />
+        </Row>
+        <Row title={t("soundVolume")}>
+          <div className="flex items-center gap-2">
+            <Slider
+              value={volume}
+              min={0}
+              max={100}
+              step={5}
+              label={t("soundVolume")}
+              format={(v) => `${v}%`}
+              onChange={(value) => updateSettings({ soundVolume: value })}
+            />
+            <Button size="sm" onClick={() => playChime("needsYou", volume)}>
+              {t("soundTest")}
+            </Button>
+          </div>
         </Row>
       </Card>
       {enabled && !systemOn && <Hint>{t("systemToastsOff")}</Hint>}

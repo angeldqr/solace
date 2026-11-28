@@ -133,8 +133,8 @@ pub fn watch(app: AppHandle) {
         }
         let (enabled, locale) = (state.settings.notifications, state.locale.clone());
         drop(state);
-        if enabled && !notices.is_empty() {
-            deliver(&app, notices, &locale);
+        if !notices.is_empty() {
+            deliver(&app, notices, &locale, enabled);
         }
         tick = tick.wrapping_add(1);
         thread::sleep(TICK);
@@ -166,12 +166,21 @@ fn window_in_use(window: &tauri::WebviewWindow) -> bool {
 }
 
 /// Native notifications for agents the user isn't looking at; an agent that needs them also
-/// flashes the taskbar button until the window comes back to the front.
-fn deliver(app: &AppHandle, notices: Vec<Pending>, locale: &str) {
+/// flashes the taskbar button until the window comes back to the front. The UI hears every notice
+/// too, to play its sound, which has its own setting.
+fn deliver(app: &AppHandle, notices: Vec<Pending>, locale: &str, toasts: bool) {
     let window = app.get_webview_window("main");
     let focused = window.as_ref().is_some_and(window_in_use);
     for pending in notices {
         if focused && pending.in_view {
+            continue;
+        }
+        let kind = match pending.notice {
+            Notice::NeedsYou => "needsYou",
+            Notice::Finished => "finished",
+        };
+        let _ = app.emit("notice", kind);
+        if !toasts {
             continue;
         }
         let (title, body) = text(

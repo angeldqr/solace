@@ -131,17 +131,22 @@ pub fn parse_claude_status(status: &Value) -> (Option<Vec<Limit>>, ClaudeSession
 }
 
 /// Claude reports the percentage itself (the cumulative `total_input_tokens` would overstate it);
-/// without it, the last request's token counts stand in.
+/// without it, the last request's token counts stand in. `current_usage` null or all zeros means
+/// unknown: Claude sends that before the first response and after `/compact` until the next one,
+/// with a stale or zero percentage beside it.
 fn claude_context(status: &Value) -> Option<ContextUse> {
     let ctx = status.get("context_window")?;
     let limit = ctx.get("context_window_size")?.as_u64()?;
+    let current = ctx.get("current_usage").map(|cur| {
+        let n = |k: &str| cur.get(k).and_then(Value::as_u64).unwrap_or(0);
+        n("input_tokens") + n("cache_creation_input_tokens") + n("cache_read_input_tokens")
+    });
+    if current == Some(0) {
+        return None;
+    }
     let used = match ctx.get("used_percentage").and_then(Value::as_f64) {
         Some(p) => (p / 100.0 * limit as f64).round() as u64,
-        None => {
-            let cur = ctx.get("current_usage").filter(|c| c.is_object())?;
-            let n = |k: &str| cur.get(k).and_then(Value::as_u64).unwrap_or(0);
-            n("input_tokens") + n("cache_creation_input_tokens") + n("cache_read_input_tokens")
-        }
+        None => current?,
     };
     Some(ContextUse {
         used,
@@ -339,6 +344,15 @@ mod tests {
         let (_, s) = parse_claude_status(&json!({"context_window": {
             "context_window_size": 1000, "current_usage": {"input_tokens": 100, "cache_read_input_tokens": 150}}}));
         assert_eq!(s.context.unwrap().used, 250);
+        // After /compact: no usage until the next response, whatever the percentage says.
+        for cur in [
+            json!(null),
+            json!({"input_tokens": 0, "cache_read_input_tokens": 0}),
+        ] {
+            let (_, s) = parse_claude_status(&json!({"context_window": {
+                "used_percentage": 0, "context_window_size": 1000000, "current_usage": cur}}));
+            assert_eq!(s.context, None);
+        }
 
         let tc = r#"{"type":"event_msg","payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":42000},"model_context_window":258400}}}"#;
         let c = parse_codex_context(tc).unwrap();

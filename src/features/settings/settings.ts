@@ -43,6 +43,11 @@ export interface Settings {
   diffIgnoreWhitespace: boolean;
   /** Show the agent in use on Discord (never folders or projects). */
   discordActivity: boolean;
+  /** Chime when an agent needs the user / finishes, while they aren't looking at it. */
+  soundNeedsYou: boolean;
+  soundFinished: boolean;
+  /** 0–100. */
+  soundVolume: number;
 }
 
 export const MAX_CSS = 100000;
@@ -76,6 +81,9 @@ export const DEFAULTS: Settings = {
   diffColors: "red-green",
   diffIgnoreWhitespace: false,
   discordActivity: true,
+  soundNeedsYou: true,
+  soundFinished: false,
+  soundVolume: 60,
 };
 
 /** Stored settings, field by field: a bad value falls back to its default instead of breaking
@@ -155,6 +163,9 @@ export function parseSettings(value: unknown, legacy: Legacy = {}): Settings {
     diffIgnoreWhitespace: bool(raw.diffIgnoreWhitespace, DEFAULTS.diffIgnoreWhitespace),
     // The old "discordPresence" key was saved as false by default; it is ignored so the new default applies.
     discordActivity: bool(raw.discordActivity, DEFAULTS.discordActivity),
+    soundNeedsYou: bool(raw.soundNeedsYou, DEFAULTS.soundNeedsYou),
+    soundFinished: bool(raw.soundFinished, DEFAULTS.soundFinished),
+    soundVolume: num(raw.soundVolume, 0, 100, DEFAULTS.soundVolume),
   };
 }
 
@@ -204,7 +215,7 @@ export function resolveTheme(settings: Settings, systemDark: boolean): Theme {
   if (settings.theme === "custom" && settings.custom) return settings.custom;
   const family = FAMILIES.find((f) => f.id === settings.theme) ?? DEFAULT_FAMILY;
   const isDark = settings.appearance === "system" ? systemDark : settings.appearance === "dark";
-  return isDark ? family.dark : family.light;
+  return isDark ? family.dark : (family.light ?? family.dark);
 }
 
 export function activeTheme(settings: Settings = useSettings.getState()): Theme {

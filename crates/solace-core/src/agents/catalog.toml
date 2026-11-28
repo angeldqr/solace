@@ -36,6 +36,11 @@ state = "idle"
 region = "title"
 regex = '^\x{2733} '
 
+# Printed by /context; fills in after /compact, when the status line has no usage until the next reply.
+[agent.context]
+region = "bottom:80"
+regex = '(?P<used>\d+(?:\.\d+)?[km]?)/(?P<limit>\d+(?:\.\d+)?[km]?) tokens \((?P<pct>\d+(?:\.\d+)?)%\)'
+
 [[agent]]
 id = "codex"
 name = "Codex"

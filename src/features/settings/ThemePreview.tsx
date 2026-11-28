@@ -5,7 +5,7 @@ import { FAMILIES, type Theme } from "./themes";
 function variants(familyId: string, custom: Theme | null): { light: Theme; dark: Theme } {
   if (familyId === "custom" && custom) return { light: custom, dark: custom };
   const family = FAMILIES.find((f) => f.id === familyId) ?? FAMILIES[0];
-  return { light: family.light, dark: family.dark };
+  return { light: family.light ?? family.dark, dark: family.dark };
 }
 
 const bar = (color: string, width: string, opacity = 1) => (

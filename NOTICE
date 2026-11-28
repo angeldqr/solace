@@ -23,3 +23,8 @@ Any file adapted from these projects keeps a header naming its origin.
 This product bundles the Windows ConPTY runtime (conpty.dll and OpenConsole.exe) from
 Microsoft's Microsoft.Windows.Console.ConPTY package, https://github.com/microsoft/terminal,
 licensed under the MIT License. Its license and third-party notices ship in conpty/.
+
+Built-in colour themes use the published palettes of these MIT-licensed projects:
+Catppuccin (catppuccin/palette), Rosé Pine (rose-pine), Tokyo Night (enkia/tokyo-night-vscode-theme),
+Kanagawa (rebelot/kanagawa.nvim), Everforest (sainnhe/everforest), Flexoki (kepano/flexoki),
+GitHub (primer/github-vscode-theme), Nord (nordtheme/nord) and Dracula (dracula/dracula-theme).

@@ -45,13 +45,15 @@ struct ContextRule {
 pub struct ScreenContext {
     pub used: Option<u64>,
     pub percent: Option<f64>,
+    /// The window size, when the screen prints it.
+    pub limit: Option<u64>,
 }
 
 /// "11.0K" -> 11000, "1.2M" -> 1200000, "8500" -> 8500.
 fn parse_count(s: &str) -> Option<u64> {
     let (num, scale) = match s.chars().last()? {
         'K' | 'k' => (&s[..s.len() - 1], 1e3),
-        'M' => (&s[..s.len() - 1], 1e6),
+        'M' | 'm' => (&s[..s.len() - 1], 1e6),
         _ => (s, 1.0),
     };
     Some((num.parse::<f64>().ok()? * scale).round() as u64)
@@ -162,11 +164,17 @@ impl AgentDef {
     pub fn context_from_screen(&self, rows: &[String]) -> Option<ScreenContext> {
         let rule = self.context.as_ref()?;
         let text = rule.region.text("", rows);
-        let caps = rule.regex.captures(&text)?;
+        // The newest report is the lowest on screen.
+        let caps = rule.regex.captures_iter(&text).last()?;
         let num = |name: &str| caps.name(name).and_then(|m| m.as_str().parse::<f64>().ok());
-        let used = caps.name("used").and_then(|m| parse_count(m.as_str()));
+        let count = |name: &str| caps.name(name).and_then(|m| parse_count(m.as_str()));
+        let used = count("used");
         let percent = num("pct").or_else(|| num("left").map(|left| 100.0 - left));
-        (used.is_some() || percent.is_some()).then_some(ScreenContext { used, percent })
+        (used.is_some() || percent.is_some()).then_some(ScreenContext {
+            used,
+            percent,
+            limit: count("limit"),
+        })
     }
 
     /// The state the screen shows, from the first matching rule; `None` when no rule applies.
@@ -357,6 +365,20 @@ mod tests {
             agent("claude")
                 .context_from_screen(&screen(&["11.0K (1%)"]))
                 .is_none()
+        );
+        // Claude's /context output; the later report wins.
+        let ctx = agent("claude")
+            .context_from_screen(&screen(&[
+                "701.3k/1m tokens (70%)",
+                "> /compact",
+                "    claude-opus-5-5",
+                "    60.3k/1m tokens (6%)",
+                "  Free space: 906.7k (91%)",
+            ]))
+            .unwrap();
+        assert_eq!(
+            (ctx.used, ctx.percent, ctx.limit),
+            (Some(60_300), Some(6.0), Some(1_000_000))
         );
     }
 

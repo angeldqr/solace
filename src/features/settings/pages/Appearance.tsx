@@ -202,7 +202,7 @@ function ThemeSection() {
             className={`flex flex-col items-center gap-3 p-4 ${TILE}`}
           >
             <span className="flex items-center gap-2">
-              <ThemeOrb theme={family.light} />
+              {family.light && <ThemeOrb theme={family.light} />}
               <ThemeOrb theme={family.dark} />
             </span>
             <span className="font-medium text-sm">{family.name}</span>

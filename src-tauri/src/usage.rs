@@ -88,8 +88,10 @@ impl SessionUsage {
         }
         if let Some(percent) = screen.percent {
             self.percent = Some(percent);
+            if screen.limit.is_some() {
+                self.limit = screen.limit;
             // An integer percent below 10 gives a limit off by up to 50%; only derive it above that.
-            if let (Some(used), true) = (screen.used, percent >= 10.0) {
+            } else if let (Some(used), true) = (screen.used, percent >= 10.0) {
                 self.limit = Some((used as f64 / (percent / 100.0)).round() as u64);
             }
         }
@@ -123,7 +125,12 @@ fn home_dir(var: &str, default: &str) -> Option<PathBuf> {
 pub fn view(state: &AppState) -> UsageView {
     let claude = state.usage.sessions.iter().map(|(pane, s)| {
         let (model, cost) = (s.model.clone(), s.cost_usd);
-        SessionUsage::new(*pane, "claude", model, cost, s.context.as_ref())
+        let session = SessionUsage::new(*pane, "claude", model, cost, s.context.as_ref());
+        // The status line knows nothing right after /compact; /context on screen fills the gap.
+        match (&s.context, state.usage.screens.get(pane)) {
+            (None, Some(screen)) => session.with_screen(screen),
+            _ => session,
+        }
     });
     let mut panes: Vec<PaneId> = state
         .usage
@@ -216,6 +223,16 @@ pub fn report(app: &AppHandle, pane: Option<PaneId>, status: &Value) {
     if let Some(pane) = pane
         && state.usage.sessions.get(&pane) != Some(&session)
     {
+        // A /context read from screen is only a stopgap until the status line knows again, and is
+        // stale once a /compact empties it.
+        let knew = state
+            .usage
+            .sessions
+            .get(&pane)
+            .is_some_and(|s| s.context.is_some());
+        if session.context.is_some() || knew {
+            state.usage.screens.remove(&pane);
+        }
         state.usage.sessions.insert(pane, session);
         changed = true;
     }
